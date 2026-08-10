@@ -64,6 +64,68 @@ function getTrimmedLegPolyline(fullCoordsArrays, boardCoords, alightCoords) {
   }
 }
 
+function isExtensionPoint(lat, lng, lineCode) {
+  if (lineCode === 'L2') {
+    return lat > 41.7725;
+  }
+  if (lineCode === 'L1' || lineCode === 'L3') {
+    return lat >= 41.7595 && lat <= 41.7615 && lng >= -2.4680 && lng <= -2.4650;
+  }
+  return false;
+}
+
+function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup) {
+  if (!coords || coords.length === 0) return;
+
+  let currentSegment = [coords[0]];
+  let currentIsExt = isExtensionPoint(parseFloat(coords[0][0]), parseFloat(coords[0][1]), lineCode);
+
+  for (let i = 1; i < coords.length; i++) {
+    const pt = coords[i];
+    const isExt = isExtensionPoint(parseFloat(pt[0]), parseFloat(pt[1]), lineCode);
+
+    if (isExt === currentIsExt) {
+      currentSegment.push(pt);
+    } else {
+      currentSegment.push(pt);
+      if (currentIsExt) {
+        L.polyline(currentSegment, {
+          color: '#f59e0b',
+          weight: isRouteActive ? 3 : 5,
+          dashArray: '8, 8',
+          opacity: isRouteActive ? 0.4 : 0.95
+        }).addTo(layerGroup);
+      } else {
+        L.polyline(currentSegment, {
+          color: color,
+          weight: isRouteActive ? 2 : 4,
+          opacity: isRouteActive ? 0.2 : 0.85
+        }).addTo(layerGroup);
+      }
+      currentSegment = [pt];
+      currentIsExt = isExt;
+    }
+  }
+
+  if (currentSegment.length > 1) {
+    if (currentIsExt) {
+      L.polyline(currentSegment, {
+        color: '#f59e0b',
+        weight: isRouteActive ? 3 : 5,
+        dashArray: '8, 8',
+        opacity: isRouteActive ? 0.4 : 0.95
+      }).addTo(layerGroup);
+    } else {
+      L.polyline(currentSegment, {
+        color: color,
+        weight: isRouteActive ? 2 : 4,
+        opacity: isRouteActive ? 0.2 : 0.85
+      }).addTo(layerGroup);
+    }
+  }
+}
+
+
 export default function MapView({ onSelectStop, activeRoute, userLocation }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -169,26 +231,9 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       const polylineArrays = REAL_LINE_POLYLINES[lineCode] || [];
       const color = LINE_COLORS[lineCode] || '#3b82f6';
 
-      polylineArrays.forEach((coords, subIdx) => {
-        if (!coords || coords.length === 0) return;
-
-        const isExtension = 
-          ((lineCode === 'L1' || lineCode === 'L3') && subIdx >= 2) ||
-          (lineCode === 'L2' && subIdx >= 1);
-
-        if (isExtension) {
-          L.polyline(coords, {
-            color: '#f59e0b',
-            weight: isRouteActive ? 3 : 5,
-            dashArray: '8, 8',
-            opacity: isRouteActive ? 0.4 : 0.95
-          }).addTo(layerGroup);
-        } else {
-          L.polyline(coords, {
-            color: color,
-            weight: isRouteActive ? 2 : 4,
-            opacity: isRouteActive ? 0.2 : 0.85
-          }).addTo(layerGroup);
+      polylineArrays.forEach(coords => {
+        if (coords && coords.length > 0) {
+          renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup);
         }
       });
     });
