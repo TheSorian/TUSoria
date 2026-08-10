@@ -603,7 +603,7 @@ body {
 .modal-panel {
   width: 100%;
   max-width: 480px;
-  max-height: 85vh;
+  /* max-height controlled by React */
   background: var(--bg-surface);
   border: 1px solid var(--border-hover);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
@@ -785,3 +785,5 @@ body {
   height: 10px;
   border-radius: 50%;
 }
+
+.modal-drag-handle { width: 40px; height: 5px; background: var(--border-hover); border-radius: 10px; margin: 8px auto 0 auto; }

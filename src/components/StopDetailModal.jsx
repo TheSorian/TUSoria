@@ -11,6 +11,49 @@ export default function StopDetailModal({ stop, onClose }) {
   const [etas, setEtas] = useState(() => isLcStop ? [] : getFallbackETAs(stop.id));
   const [isRefreshing, setIsRefreshing] = useState(!isLcStop);
 
+  // Swipe-to-expand / Swipe-to-close state
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [dragY, setDragY] = useState(0);
+  const touchStartY = React.useRef(0);
+
+  const handleTouchStart = (e) => {
+    if (!e.target.closest('.modal-drag-area')) return;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e) => {
+    if (!touchStartY.current) return;
+    const currentY = e.touches[0].clientY;
+    const dy = currentY - touchStartY.current;
+    
+    // If expanded, dragging down reduces height. Dragging up does nothing (already max).
+    if (isExpanded) {
+      if (dy > 0) setDragY(dy);
+    } 
+    // If collapsed, dragging up expands. Dragging down dismisses.
+    else {
+      setDragY(dy);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartY.current) return;
+    touchStartY.current = 0;
+    
+    if (isExpanded) {
+      if (dragY > 100) {
+        setIsExpanded(false); // Collapse
+      }
+    } else {
+      if (dragY < -50) {
+        setIsExpanded(true); // Expand
+      } else if (dragY > 100) {
+        onClose(); // Dismiss
+      }
+    }
+    setDragY(0);
+  };
+
   useEffect(() => {
     if (isLcStop) return;
 
@@ -34,13 +77,31 @@ export default function StopDetailModal({ stop, onClose }) {
 
   const isFromCamaretasStop = stop.id === 'LC_CC' || stop.id === 'LC_CIVICO';
 
+  const modalStyle = {
+    transform: dragY !== 0 ? `translateY(${dragY}px)` : 'translateY(0)',
+    height: isExpanded ? '95vh' : '75vh',
+    transition: touchStartY.current === 0 ? 'height 0.3s cubic-bezier(0.25, 1, 0.5, 1), transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)' : 'none'
+  };
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-panel" onClick={e => e.stopPropagation()}>
-        
-        {/* Header */}
-        <div className="modal-header">
-          <div>
+      <div 
+        className="modal-panel" 
+        onClick={e => e.stopPropagation()}
+        style={modalStyle}
+      >
+        <div 
+          className="modal-drag-area"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{ cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
+        >
+          <div className="modal-drag-handle"></div>
+          
+          {/* Header */}
+          <div className="modal-header" style={{ paddingTop: 8 }}>
+            <div>
             <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
               <span className="line-badge" style={{ background: isLcStop ? '#d4af37' : 'var(--accent)', fontSize: 10 }}>
                 #{stop.id}
@@ -53,9 +114,10 @@ export default function StopDetailModal({ stop, onClose }) {
           </div>
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
+        </div>
 
         {/* Tab switcher (Hidden for LC stops as they don't have real-time SAE) */}
-        {!isLcStop && (
+      {!isLcStop && (
           <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-subtle)' }}>
             <div className="tab-switcher">
               <button className={activeTab === 'realtime' ? 'active' : ''} onClick={() => setActiveTab('realtime')}>
