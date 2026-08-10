@@ -131,10 +131,23 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
     }
   }
 
-  // Render direction arrows at fixed, regular intervals
-  const arrowStep = 10;
-  for (let i = arrowStep; i < coords.length - 5; i += arrowStep) {
-    let renderIdx = i;
+  // Render direction arrows at perfectly even physical intervals
+  const ARROW_DISTANCE_THRESHOLD = 0.002; // Roughly 200 meters
+  let accumulatedDist = 0;
+  
+  for (let i = 1; i < coords.length - 2; i++) {
+    const prevLat = parseFloat(coords[i - 1][0]);
+    const prevLng = parseFloat(coords[i - 1][1]);
+    const currLat = parseFloat(coords[i][0]);
+    const currLng = parseFloat(coords[i][1]);
+    
+    const dLat = currLat - prevLat;
+    const dLng = currLng - prevLng;
+    accumulatedDist += Math.sqrt(dLat * dLat + dLng * dLng);
+    
+    if (accumulatedDist >= ARROW_DISTANCE_THRESHOLD) {
+      accumulatedDist = 0; // Reset for next arrow
+      let renderIdx = i;
     const lat = parseFloat(coords[renderIdx][0]);
     const lng = parseFloat(coords[renderIdx][1]);
 
@@ -181,6 +194,7 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
       }
     }
   }
+}
 }
 
 
