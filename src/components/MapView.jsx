@@ -71,8 +71,8 @@ function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
     return lat > 41.7725 || (lat > 41.7720 && lng < -2.4885);
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
-    // Calaverón detour loop (Juan Antonio Simón, Morales Contreras, Santa Clara, Rabanera)
-    return lat >= 41.7585 && lat <= 41.7626 && lng >= -2.4682 && lng <= -2.4635;
+    // Calaverón detour loop (Juan Antonio Simón, Morales Contreras, Santa Clara, Alberca)
+    return lat >= 41.7585 && lat <= 41.7632 && lng >= -2.4685 && lng <= -2.4630;
   }
   return false;
 }
