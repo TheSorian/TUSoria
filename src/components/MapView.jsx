@@ -377,7 +377,14 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     
     // 2. Draw background line polylines (Differentiating standard vs prolongation *Calaverón / *Polígono)
     const isRouteActive = !!activeRoute;
-    Object.keys(REAL_LINE_POLYLINES).forEach(lineCode => {
+    const linePriority = { 'LC': 1, 'C': 1, 'EX': 2, 'L4E': 2 };
+    const sortedLineCodes = Object.keys(REAL_LINE_POLYLINES).sort((a, b) => {
+      const pA = linePriority[a] || 10;
+      const pB = linePriority[b] || 10;
+      return pA - pB;
+    });
+
+    sortedLineCodes.forEach(lineCode => {
       if (selectedLineFilter && lineCode !== selectedLineFilter) return;
 
       let polylineArrays = REAL_LINE_POLYLINES[lineCode] || [];
