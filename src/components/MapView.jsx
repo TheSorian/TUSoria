@@ -71,9 +71,8 @@ function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
     return lat > 41.7725 || (lat > 41.7720 && lng < -2.4885);
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
-    // Calaverón extension loop (polyIdx === 1 or lat/lng inside Calaverón box)
-    if (polyIdx === 1) return true;
-    return lat >= 41.7595 && lat <= 41.7615 && lng >= -2.4680 && lng <= -2.4650;
+    // Only the Calaverón detour loop (Juan Antonio Simón & Morales Contreras)
+    return lat >= 41.7590 && lat <= 41.7620 && lng >= -2.4680 && lng <= -2.4645;
   }
   return false;
 }
@@ -125,6 +124,34 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
         weight: isRouteActive ? 2 : 4,
         opacity: isRouteActive ? 0.2 : 0.85
       }).addTo(layerGroup);
+    }
+  }
+
+  // Render direction arrows along the polyline
+  const arrowStep = Math.max(15, Math.floor(coords.length / 7));
+  for (let i = arrowStep; i < coords.length - 5; i += arrowStep) {
+    const p1 = coords[i - 2];
+    const p2 = coords[i + 2] || coords[i + 1];
+    if (p1 && p2) {
+      const dy = parseFloat(p2[0]) - parseFloat(p1[0]);
+      const dx = parseFloat(p2[1]) - parseFloat(p1[1]);
+      if (dy * dy + dx * dx > 0.0000001) {
+        const angle = Math.atan2(dx, dy) * (180 / Math.PI);
+        const arrowIcon = L.divIcon({
+          className: 'polyline-arrow-marker',
+          html: `<div style="transform: rotate(${angle.toFixed(1)}deg); width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: ${isRouteActive ? 0.5 : 0.9};">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));">
+              <path d="M12 2L2 22l10-4 10 4z"/>
+            </svg>
+          </div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        L.marker([parseFloat(coords[i][0]), parseFloat(coords[i][1])], {
+          icon: arrowIcon,
+          interactive: false
+        }).addTo(layerGroup);
+      }
     }
   }
 }
