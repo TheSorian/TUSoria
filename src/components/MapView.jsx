@@ -134,8 +134,31 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
   // Render direction arrows at fixed, regular intervals
   const arrowStep = 10;
   for (let i = arrowStep; i < coords.length - 5; i += arrowStep) {
-    const p1 = coords[i - 2];
-    const p2 = coords[i + 2] || coords[i + 1];
+    let renderIdx = i;
+    const lat = parseFloat(coords[renderIdx][0]);
+    const lng = parseFloat(coords[renderIdx][1]);
+
+    // Check if the arrow is colliding with a bus stop
+    let isTooClose = false;
+    for (let s = 0; s < DEFAULT_STOPS.length; s++) {
+      const stop = DEFAULT_STOPS[s];
+      if (!stop.lines.includes(lineCode)) continue;
+      const dlat = stop.lat - lat;
+      const dlng = stop.lng - lng;
+      // 0.00000004 is roughly a 20-25 meter radius squared
+      if (dlat * dlat + dlng * dlng < 0.00000004) {
+        isTooClose = true;
+        break;
+      }
+    }
+
+    // Shift arrow slightly backwards if it falls on top of a stop
+    if (isTooClose) {
+      renderIdx = Math.max(2, i - 4);
+    }
+
+    const p1 = coords[renderIdx - 2];
+    const p2 = coords[renderIdx + 2] || coords[renderIdx + 1];
     if (p1 && p2) {
       const dy = parseFloat(p2[0]) - parseFloat(p1[0]);
       const dx = parseFloat(p2[1]) - parseFloat(p1[1]);
@@ -151,7 +174,7 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
           iconSize: [14, 14],
           iconAnchor: [7, 7]
         });
-        L.marker([parseFloat(coords[i][0]), parseFloat(coords[i][1])], {
+        L.marker([parseFloat(coords[renderIdx][0]), parseFloat(coords[renderIdx][1])], {
           icon: arrowIcon,
           interactive: false
         }).addTo(layerGroup);
