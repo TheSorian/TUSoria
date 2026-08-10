@@ -50,7 +50,8 @@ export default function App() {
   return (
     <div className="app-shell">
       <SearchBar
-        userLocation={userLocation}\n            selectedStop={selectedStop}
+        userLocation={userLocation}
+        selectedStop={selectedStop}
         geoPermission={geoPermission}
         alertsCount={SERVICE_ALERTS.length}
         onSelectStop={(stop) => {
@@ -66,7 +67,8 @@ export default function App() {
           <MapView
             onSelectStop={(stop) => setSelectedStop(stop)}
             activeRoute={activeRouteOnMap}
-            userLocation={userLocation}\n            selectedStop={selectedStop}
+            userLocation={userLocation}
+        selectedStop={selectedStop}
           />
         )}
         {activeTab === 'lines' && (
