@@ -9,11 +9,11 @@ const LINE_COLORS = {
   'L1': '#1a4b8c',
   'L2': '#dc2626',
   'L3': '#0891b2',
-  'L4': '#ea580c',
-  'L4E': '#ea580c',
+  'L4': '#059669',
+  'L4E': '#059669',
   'C': '#7c3aed',
   'EX': '#d97706',
-  'LC': '#059669'
+  'LC': '#d4af37'
 };
 
 const CALAVERON_STOP_IDS = ['11', '14'];
@@ -66,8 +66,9 @@ function getTrimmedLegPolyline(fullCoordsArrays, boardCoords, alightCoords) {
 
 function isExtensionPoint(lat, lng, lineCode) {
   if (lineCode === 'L2') {
-    // Only internal Polígono Industrial loop north of Calle H / Av. Valladolid
-    return lat > 41.7742;
+    // Only internal Polígono Industrial loop (Prolongación)
+    // Calle H (Standard) is at 41.7715. Calle H / Calle N (Prolongada) is at 41.7725.
+    return lat > 41.7720;
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
     // Calaverón extension loop
@@ -249,7 +250,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       const isPoligonoExtensionStop = POLIGONO_STOP_IDS.includes(String(stop.id));
       const isExtensionStop = isCalaveronStop || isPoligonoExtensionStop;
 
-      const bgColor = isLcStop ? '#059669' : '#1a4b8c';
+      const bgColor = isLcStop ? '#d4af37' : '#1a4b8c';
       
       const busSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="3" rx="3"/><path d="M4 11h16"/><path d="M8 6v5"/><path d="M16 6v5"/><path d="M8 15h.01"/><path d="M16 15h.01"/><path d="M6 19v2"/><path d="M18 19v2"/></svg>`;
 
@@ -313,7 +314,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
           ${extensionBadge}
           <p style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">Coordenadas: ${stop.lat.toFixed(5)}, ${stop.lng.toFixed(5)}</p>
           <div style="margin-bottom: 8px;">${linesHTML}</div>
-          <button id="popup-btn-${stop.id}" style="width: 100%; background: ${isLcStop ? '#059669' : '#2563eb'}; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">${isLcStop ? 'Ver horarios' : 'Ver Tiempos en Vivo'}</button>
+          <button id="popup-btn-${stop.id}" style="width: 100%; background: ${isLcStop ? '#d4af37' : '#2563eb'}; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">${isLcStop ? 'Ver horarios' : 'Ver Tiempos en Vivo'}</button>
         </div>
       `;
       

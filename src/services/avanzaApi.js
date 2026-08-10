@@ -1,6 +1,7 @@
 import { SERVICE_ALERTS } from '../data/provisionalStops';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
+import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 
@@ -34,12 +35,22 @@ export async function fetchStopETAs(stopId) {
       );
 
       if (filtered.length > 0) {
-        return filtered.map(b => ({
-          ...b,
-          isLive: true,
-          desBusLine: b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1'),
-          minutesArrive: b.minutesArrive != null ? b.minutesArrive : b.minutesRemaining
-        }));
+        const directBuses = [];
+        filtered.forEach(b => {
+          const lineCode = b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1');
+          if (targetLines && targetLines.includes(lineCode)) {
+            directBuses.push({
+              ...b,
+              isLive: true,
+              desBusLine: lineCode,
+              minutesArrive: b.minutesArrive != null ? b.minutesArrive : b.minutesRemaining
+            });
+          }
+        });
+        
+        if (directBuses.length > 0) {
+          return directBuses;
+        }
       }
     }
   } catch (error) {
@@ -65,16 +76,25 @@ export async function fetchStopETAs(stopId) {
         filtered.forEach(b => {
           const lineCode = b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1');
           
-          if (!targetLines || targetLines.length === 0 || targetLines.includes(lineCode)) {
-            let mins = b.minutesArrive != null ? b.minutesArrive : 15;
+          if (targetLines && targetLines.includes(lineCode)) {
+            let mins = null;
             
-            if (targetStop && b.latitude && b.longitude) {
+            // If the user actually queried Stop 1, we can trust the API's minutesArrive for Stop 1 buses
+            if (String(stopId) === '1' && b.minutesArrive != null) {
+              mins = b.minutesArrive;
+            } else if (targetStop && b.latitude && b.longitude) {
               const bLat = parseFloat(b.latitude);
               const bLng = parseFloat(b.longitude);
-              const dist = calculateDistanceMeters(targetStop.lat, targetStop.lng, bLat, bLng);
-              const extraMins = Math.round(dist / 350); // approx 350m per min in city
-              mins = Math.max(2, Math.min(60, mins + extraMins));
+              if (bLat !== 0 && bLng !== 0) {
+                const dist = calculateDistanceMeters(targetStop.lat, targetStop.lng, bLat, bLng);
+                // Calculate ETA purely based on distance (approx 300m per min in city)
+                // This is a rough estimate but much better than identical ETAs for all stops
+                mins = Math.max(1, Math.round(dist / 300));
+              }
             }
+
+            // If we have no way to calculate an ETA for this stop, don't show a fake live one
+            if (mins === null) return;
 
             const arrHour = Math.floor((curMin + mins) / 60) % 24;
             const arrMin = (curMin + mins) % 60;
@@ -194,12 +214,7 @@ export function getFallbackETAs(stopId) {
     const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
     if (!lineSched || !lineSched.stops) return;
 
-    const matchStop = lineSched.stops.find(s => {
-      if (String(s.num) === String(stopId)) return true;
-      const sName = s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const stopName = stopObj.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return sName.includes(stopName) || stopName.includes(sName);
-    });
+    const matchStop = findMatchingStopInSchedule(lineSched.stops, stopObj);
 
     if (!matchStop || !matchStop.tripTimes) return;
 

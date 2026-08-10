@@ -1,6 +1,7 @@
 import { SORIA_KEY_PLACES, SORIA_LINES } from '../data/soriaLines';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
+import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 import { fetchStopETAs, isLineActiveToday } from './avanzaApi';
 
 export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
@@ -56,14 +57,7 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName) {
 
   const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
   if (lineSched && lineSched.stops) {
-    const matchStop = lineSched.stops.find(s => {
-      const sNum = String(s.num);
-      const stId = String(stopId);
-      if (sNum === stId) return true;
-      const sName = s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      const targetName = stopName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return sName.includes(targetName) || targetName.includes(sName);
-    });
+    const matchStop = findMatchingStopInSchedule(lineSched.stops, { id: stopId, name: stopName });
 
     if (matchStop && matchStop.tripTimes) {
       let bestNext = null;

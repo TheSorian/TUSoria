@@ -3,6 +3,7 @@ import { fetchStopETAs, getFallbackETAs } from '../services/avanzaApi';
 import { SORIA_LINES } from '../data/soriaLines';
 import { CAMARETAS_TIMETABLE } from '../data/camaretasSchedule';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
+import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 
 export default function StopDetailModal({ stop, onClose }) {
   const isLcStop = stop.lines.includes('LC');
@@ -41,7 +42,7 @@ export default function StopDetailModal({ stop, onClose }) {
         <div className="modal-header">
           <div>
             <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
-              <span className="line-badge" style={{ background: isLcStop ? '#059669' : 'var(--accent)', fontSize: 10 }}>
+              <span className="line-badge" style={{ background: isLcStop ? '#d4af37' : 'var(--accent)', fontSize: 10 }}>
                 #{stop.id}
               </span>
               <h3 style={{ fontSize: 15, fontWeight: 700 }}>{stop.name}</h3>
@@ -224,14 +225,10 @@ export default function StopDetailModal({ stop, onClose }) {
                   const line = SORIA_LINES.find(l => l.code === lineCode);
                   const fullSched = AVANZA_FULL_SCHEDULES[lineCode];
                   
-                  // Find matching stop in fullSched
-                  let matchedStop = fullSched?.stops?.find(st => {
-                    const stName = st.name.toLowerCase();
-                    const stopName = stop.name.toLowerCase();
-                    return stName.includes(stopName) || stopName.includes(stName);
-                  }) || fullSched?.stops?.[0];
-
                   if (!line) return null;
+                  
+                  // Find matching stop in fullSched
+                  let matchedStop = findMatchingStopInSchedule(fullSched?.stops, stop);
                   return (
                     <div key={lineCode} className="card space-y">
                       <div className="flex items-center gap-2" style={{ marginBottom: 4 }}>
