@@ -202,11 +202,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       const isPoligonoExtensionStop = POLIGONO_STOP_IDS.includes(String(stop.id));
       const isExtensionStop = isCalaveronStop || isPoligonoExtensionStop;
 
-      const bgColor = isExtensionStop 
-        ? '#f59e0b' 
-        : (isLcStop ? '#059669' : '#1a4b8c');
-
-      const borderColor = isExtensionStop ? '#fef08a' : '#ffffff';
+      const bgColor = isLcStop ? '#059669' : '#1a4b8c';
       
       const busSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="3" rx="3"/><path d="M4 11h16"/><path d="M8 6v5"/><path d="M16 6v5"/><path d="M8 15h.01"/><path d="M16 15h.01"/><path d="M6 19v2"/><path d="M18 19v2"/></svg>`;
 
@@ -216,14 +212,14 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
           height: ${isEditMode ? '24px' : '20px'}; 
           border-radius: 6px; 
           background: ${bgColor}; 
-          border: 2px solid ${borderColor}; 
-          box-shadow: ${isExtensionStop ? '0 0 10px rgba(245, 158, 11, 0.8)' : '0 2px 8px rgba(0,0,0,0.5)'};
+          border: 2px solid #ffffff; 
+          box-shadow: 0 2px 8px rgba(0,0,0,0.5);
           display: flex;
           align-items: center;
           justify-content: center;
           opacity: ${isRouteActive ? '0.4' : '1.0'};
         ">
-          ${isEditMode ? '🖐️' : (isExtensionStop ? '⭐' : busSvg)}
+          ${isEditMode ? '🖐️' : busSvg}
         </div>
       `;
       
