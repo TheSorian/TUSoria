@@ -259,8 +259,19 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
     Object.keys(REAL_LINE_POLYLINES).forEach(lineCode => {
       if (selectedLineFilter && lineCode !== selectedLineFilter) return;
 
-      const polylineArrays = REAL_LINE_POLYLINES[lineCode] || [];
+      let polylineArrays = REAL_LINE_POLYLINES[lineCode] || [];
       const color = LINE_COLORS[lineCode] || '#3b82f6';
+
+      // Inject missing straight segment for L3 standard route (Alfonso VIII)
+      if (lineCode === 'L3') {
+        polylineArrays = [...polylineArrays, [
+          [41.761634, -2.469986],
+          [41.762534, -2.469774],
+          [41.762795, -2.469748],
+          [41.763352, -2.469575],
+          [41.763808, -2.468693]
+        ]];
+      }
 
       polylineArrays.forEach((coords, polyIdx) => {
         if (coords && coords.length > 0) {
