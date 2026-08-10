@@ -17,6 +17,29 @@ export default defineConfig({
   },
   plugins: [
     basicSsl(),
-    react()
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg'],
+      manifest: {
+        name: 'TUSoria',
+        short_name: 'TUSoria',
+        description: 'Transporte Urbano de Soria en Tiempo Real',
+        theme_color: '#2563eb',
+        background_color: '#ffffff',
+        display: 'standalone',
+        icons: [
+          {
+            src: 'favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any maskable'
+          }
+        ]
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+      }
+    })
   ]
 });
