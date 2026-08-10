@@ -3902,6 +3902,10 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           null,
+          null,
+          null,
+          null,
+          null,
           "13:39",
           "14:09",
           null,
@@ -3923,17 +3927,17 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:44",
-          "22:14",
-          null,
-          null,
-          null,
-          null
+          "22:14"
         ]
       },
       {
         "num": "9",
         "name": "CALLE G (A)",
         "tripTimes": [
+          null,
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -3966,17 +3970,17 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:45",
-          "22:15",
-          null,
-          null,
-          null,
-          null
+          "22:15"
         ]
       },
       {
         "num": "10",
         "name": "CALLE D",
         "tripTimes": [
+          null,
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -4009,17 +4013,17 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:46",
-          "22:16",
-          null,
-          null,
-          null,
-          null
+          "22:16"
         ]
       },
       {
         "num": "11",
         "name": "CALLE D / FICO",
         "tripTimes": [
+          null,
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -4052,17 +4056,17 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:47",
-          "22:17",
-          null,
-          null,
-          null,
-          null
+          "22:17"
         ]
       },
       {
         "num": "12",
         "name": "CALLE E",
         "tripTimes": [
+          null,
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -4095,17 +4099,17 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:48",
-          "22:18",
-          null,
-          null,
-          null,
-          null
+          "22:18"
         ]
       },
       {
         "num": "13",
         "name": "CALLE G (B)",
         "tripTimes": [
+          null,
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -4138,17 +4142,17 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:49",
-          "22:19",
-          null,
-          null,
-          null,
-          null
+          "22:19"
         ]
       },
       {
         "num": "14",
         "name": "CALLE H / CALLE N",
         "tripTimes": [
+          null,
+          null,
+          null,
+          null,
           null,
           null,
           null,
@@ -4181,11 +4185,7 @@ export const AVANZA_FULL_SCHEDULES = {
           null,
           null,
           "21:50",
-          "22:20",
-          null,
-          null,
-          null,
-          null
+          "22:20"
         ]
       },
       {

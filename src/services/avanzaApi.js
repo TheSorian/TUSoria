@@ -1,4 +1,6 @@
 import { SERVICE_ALERTS } from '../data/provisionalStops';
+import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
+import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 
@@ -30,9 +32,14 @@ export async function fetchStopETAs(stopId) {
     const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
     
     // FILTER: Only return buses for Soria company
-    return rawTraffics.filter(b => 
+    const filtered = rawTraffics.filter(b => 
       !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
     );
+
+    if (filtered.length > 0) {
+      return filtered;
+    }
+    return getFallbackETAs(stopId);
   } catch (error) {
     console.warn(`[TUSoria API] Fetch real-time error for stop ${stopId}:`, error);
     return getFallbackETAs(stopId);
@@ -79,36 +86,73 @@ export async function fetchServiceAlerts() {
 }
 
 /**
- * Fallback ETAs if service is inactive at night or offline
+ * Compute realistic stop-specific ETAs based on the exact lines serving the stop and schedule matrix
  */
-function getFallbackETAs(stopId) {
+export function getFallbackETAs(stopId) {
   const now = new Date();
   const hour = now.getHours();
+  const currentMinutes = hour * 60 + now.getMinutes();
 
-  // If night time (23:00 to 07:00), service closed
   if (hour >= 23 || hour < 7) {
     return [];
   }
 
-  // Generate realistic fallback times for testing during day hours
-  return [
-    {
-      idBusLine: "001",
-      desBusLine: "L1",
-      idBus: "S-104",
-      minutesArrive: 4,
-      arrivalTime: `${hour}:${(now.getMinutes() + 4) % 60}`,
-      desDepartureBusStop: "Mariano Granados",
-      desArrivalBusStop: "Hospital Santa Bárbara"
-    },
-    {
-      idBusLine: "002",
-      desBusLine: "L2",
-      idBus: "S-108",
-      minutesArrive: 11,
-      arrivalTime: `${hour}:${(now.getMinutes() + 11) % 60}`,
-      desDepartureBusStop: "Paseo del Salón",
-      desArrivalBusStop: "Estación Autobuses"
+  // Find stop in SORIA_ALL_STOPS
+  const stopObj = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
+  if (!stopObj || !stopObj.lines || stopObj.lines.length === 0) {
+    return [];
+  }
+
+  const results = [];
+
+  stopObj.lines.forEach((lineCode, lIdx) => {
+    if (lineCode === 'LC') return;
+
+    const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+    if (!lineSched || !lineSched.stops) return;
+
+    const matchStop = lineSched.stops.find(s => {
+      if (String(s.num) === String(stopId)) return true;
+      const sName = s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const stopName = stopObj.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return sName.includes(stopName) || stopName.includes(sName);
+    });
+
+    if (!matchStop || !matchStop.tripTimes) return;
+
+    let bestNext = null;
+    let minDiff = Infinity;
+
+    matchStop.tripTimes.forEach((tStr) => {
+      if (!tStr) return;
+      const [h, m] = tStr.split(':').map(Number);
+      const tripMin = h * 60 + m;
+      const diff = tripMin - currentMinutes;
+
+      if (diff >= 0 && diff < minDiff) {
+        minDiff = diff;
+        bestNext = tStr;
+      }
+    });
+
+    if (bestNext) {
+      const arrHour = Math.floor((currentMinutes + minDiff) / 60) % 24;
+      const arrMin = (currentMinutes + minDiff) % 60;
+      const timeStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
+
+      results.push({
+        idBusLine: `00${lIdx + 1}`,
+        desBusLine: lineCode,
+        idBus: `S-${100 + lIdx * 4 + 2}`,
+        minutesArrive: minDiff,
+        arrivalTime: timeStr,
+        desDepartureBusStop: stopObj.name,
+        desArrivalBusStop: lineCode === 'L1' || lineCode === 'L3' ? 'Hospital Sta. Bárbara' : lineCode === 'L2' ? 'Polígono / Estación' : 'Mariano Granados'
+      });
     }
-  ];
+  });
+
+  results.sort((a, b) => a.minutesArrive - b.minutesArrive);
+  return results;
 }
+
