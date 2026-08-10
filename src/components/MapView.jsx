@@ -199,12 +199,32 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
 }
 
 
-export default function MapView({ onSelectStop, activeRoute, userLocation, selectedStop }) {
+export default function MapView({ onSelectStop, activeRoute, userLocation, selectedTarget, selectedStop }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const busesLayerRef = useRef(null);
   const [liveBuses, setLiveBuses] = useState([]);
   const [selectedLineFilter, setSelectedLineFilter] = useState(null);
+
+  const target = selectedTarget || selectedStop;
+
+  // Center on selected stop or location when it changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (target && target.lat && target.lng) {
+      mapRef.current.flyTo([target.lat, target.lng], 17, { duration: 0.8 });
+    }
+  }, [target]);
+
+  // Center on user location on first load
+  const hasCenteredOnUser = useRef(false);
+  useEffect(() => {
+    if (!mapRef.current || !userLocation) return;
+    if (!hasCenteredOnUser.current && !target && !activeRoute) {
+      hasCenteredOnUser.current = true;
+      mapRef.current.setView([userLocation.lat, userLocation.lng], 16);
+    }
+  }, [userLocation, target, activeRoute]);
 
   useEffect(() => {
     let mounted = true;
@@ -296,23 +316,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     });
   };
 
-  // Center on selected stop when it changes
-  useEffect(() => {
-    if (!mapRef.current) return;
-    if (selectedStop && selectedStop.lat && selectedStop.lng) {
-      mapRef.current.flyTo([selectedStop.lat, selectedStop.lng], 17, { duration: 0.8 });
-    }
-  }, [selectedStop]);
 
-  // Center on user location on first load
-  const hasCenteredOnUser = useRef(false);
-  useEffect(() => {
-    if (!mapRef.current || !userLocation) return;
-    if (!hasCenteredOnUser.current && !selectedStop && !activeRoute) {
-      hasCenteredOnUser.current = true;
-      mapRef.current.setView([userLocation.lat, userLocation.lng], 16);
-    }
-  }, [userLocation, selectedStop, activeRoute]);
 
   useEffect(() => {
     if (!mapRef.current && mapContainerRef.current) {

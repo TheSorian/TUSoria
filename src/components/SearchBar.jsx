@@ -51,8 +51,7 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
       setOriginQuery(item.name);
     }
     setShowDropdown(false);
-
-    if (item.type === 'stop') {
+    if (onSelectStop) {
       onSelectStop(item);
     }
   };

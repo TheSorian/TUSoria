@@ -33,6 +33,18 @@ export default function App() {
     }
   }, []);
 
+  const [selectedTarget, setSelectedTarget] = useState(null);
+
+  const handleSelectLocation = (item) => {
+    setSelectedTarget(item);
+    if (item && (item.type === 'stop' || (item.lines && Array.isArray(item.lines)))) {
+      setSelectedStop(item);
+    } else {
+      setSelectedStop(null);
+    }
+    setActiveTab('map');
+  };
+
   const handleShowRouteOnMap = (route) => {
     setActiveRouteOnMap(route);
     setActiveTab('map');
@@ -45,6 +57,7 @@ export default function App() {
   const handleResetSearch = () => {
     setCalculatedRoutes(null);
     setActiveRouteOnMap(null);
+    setSelectedTarget(null);
   };
 
   return (
@@ -54,10 +67,7 @@ export default function App() {
         selectedStop={selectedStop}
         geoPermission={geoPermission}
         alertsCount={SERVICE_ALERTS.length}
-        onSelectStop={(stop) => {
-          setSelectedStop(stop);
-          setActiveTab('map');
-        }}
+        onSelectStop={handleSelectLocation}
         onRoutesFound={handleRoutesFound}
         onResetSearch={handleResetSearch}
       />
@@ -65,10 +75,10 @@ export default function App() {
       <div className="main-content">
         {activeTab === 'map' && (
           <MapView
-            onSelectStop={(stop) => setSelectedStop(stop)}
+            onSelectStop={handleSelectLocation}
             activeRoute={activeRouteOnMap}
             userLocation={userLocation}
-        selectedStop={selectedStop}
+            selectedTarget={selectedTarget}
           />
         )}
         {activeTab === 'lines' && (
