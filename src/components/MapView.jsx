@@ -199,7 +199,7 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
 }
 
 
-export default function MapView({ onSelectStop, activeRoute, userLocation }) {
+export default function MapView({ onSelectStop, activeRoute, userLocation, selectedStop }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const busesLayerRef = useRef(null);
