@@ -8,46 +8,33 @@ const BASE_URL = 'https://soria.avanzagrupo.com';
  * Fetch real-time arrivals for a specific stop ID in Soria
  */
 export async function fetchStopETAs(stopId) {
-  const endpoint = `${BASE_URL}/detalleparada?p_p_id=adoParadaFecha_AdoParadaFechaPortlet_INSTANCE_cjPafX1mEmsC&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage&_adoParadaFecha_AdoParadaFechaPortlet_INSTANCE_cjPafX1mEmsC_cmd=getETAS`;
-  
-  const params = new URLSearchParams({
-    "_adoParadaFecha_AdoParadaFechaPortlet_INSTANCE_cjPafX1mEmsC_busStopID": String(stopId)
-  });
+  // 1. Query Vercel Serverless proxy (bypasses browser CORS & Avanza SSL cert chain error)
+  const proxyEndpoint = `/api/eta?stopId=${encodeURIComponent(stopId)}`;
 
   try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: params.toString()
-    });
+    const response = await fetch(proxyEndpoint);
+    if (response.ok) {
+      const data = await response.json();
+      const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
+      const filtered = rawTraffics.filter(b => 
+        !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
+      );
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      if (filtered.length > 0) {
+        return filtered.map(b => ({
+          ...b,
+          isLive: true,
+          desBusLine: b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1'),
+          minutesArrive: b.minutesArrive != null ? b.minutesArrive : b.minutesRemaining
+        }));
+      }
     }
-
-    const data = await response.json();
-    const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
-    
-    // FILTER: Only return buses for Soria company
-    const filtered = rawTraffics.filter(b => 
-      !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
-    );
-
-    if (filtered.length > 0) {
-      return filtered.map(b => ({
-        ...b,
-        isLive: true,
-        minutesArrive: b.minutesArrive != null ? b.minutesArrive : b.minutesRemaining
-      }));
-    }
-    return getFallbackETAs(stopId);
   } catch (error) {
-    console.warn(`[TUSoria API] Fetch real-time error for stop ${stopId}:`, error);
-    return getFallbackETAs(stopId);
+    console.warn(`[TUSoria API] Fetch real-time proxy error for stop ${stopId}:`, error);
   }
+
+  // 2. Fallback to stop-specific schedule matrix if offline / service closed
+  return getFallbackETAs(stopId);
 }
 
 /**
