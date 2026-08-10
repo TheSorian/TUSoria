@@ -131,8 +131,9 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
     }
   }
 
-  // Render direction arrows along the polyline
-  const arrowStep = Math.max(15, Math.floor(coords.length / 7));
+  // Render direction arrows along the polyline at more regular intervals
+  // Using a smaller divisor means more arrows, and a smaller min-step means more frequent arrows on short segments
+  const arrowStep = Math.max(12, Math.floor(coords.length / 12));
   for (let i = arrowStep; i < coords.length - 5; i += arrowStep) {
     const p1 = coords[i - 2];
     const p2 = coords[i + 2] || coords[i + 1];
