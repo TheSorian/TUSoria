@@ -296,6 +296,24 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
     });
   };
 
+  // Center on selected stop when it changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (selectedStop && selectedStop.lat && selectedStop.lng) {
+      mapRef.current.flyTo([selectedStop.lat, selectedStop.lng], 17, { duration: 0.8 });
+    }
+  }, [selectedStop]);
+
+  // Center on user location on first load
+  const hasCenteredOnUser = useRef(false);
+  useEffect(() => {
+    if (!mapRef.current || !userLocation) return;
+    if (!hasCenteredOnUser.current && !selectedStop && !activeRoute) {
+      hasCenteredOnUser.current = true;
+      mapRef.current.setView([userLocation.lat, userLocation.lng], 16);
+    }
+  }, [userLocation, selectedStop, activeRoute]);
+
   useEffect(() => {
     if (!mapRef.current && mapContainerRef.current) {
       const map = L.map(mapContainerRef.current, {
