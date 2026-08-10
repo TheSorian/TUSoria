@@ -72,7 +72,7 @@ function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
     // Only the Calaverón detour loop (Juan Antonio Simón & Morales Contreras)
-    return lat >= 41.7590 && lat <= 41.7620 && lng >= -2.4680 && lng <= -2.4645;
+    return lat >= 41.7598 && lat <= 41.7622 && lng >= -2.4680 && lng <= -2.4655;
   }
   return false;
 }
