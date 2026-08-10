@@ -71,8 +71,12 @@ function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
     return lat > 41.7725 || (lat > 41.7720 && lng < -2.4885);
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
-    // Calaverón detour loop (Juan Antonio Simón, Morales Contreras, Santa Clara, Alberca)
-    return lat >= 41.7585 && lat <= 41.7636 && lng >= -2.4690 && lng <= -2.4630;
+    // Calaverón detour loop:
+    // 1. South part (Venerable Carabantes, Juan Antonio Simón, Morales Contreras)
+    const isSouthDetour = (lat <= 41.7618 && lng >= -2.4702 && lng <= -2.4630);
+    // 2. North part (Santa Clara, Alberca returning to Ramón y Cajal) - strictly East of Alfonso VIII
+    const isNorthDetour = (lat > 41.7618 && lat <= 41.7636 && lng >= -2.4688 && lng <= -2.4670);
+    return isSouthDetour || isNorthDetour;
   }
   return false;
 }
