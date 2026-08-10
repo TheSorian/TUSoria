@@ -9,8 +9,39 @@
     <meta name="theme-color" content="#0c1425" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <title>TUSoria — Transporte Urbano de Soria en Vivo</title>
-
+    <script>
+      // Automatic recovery if old ServiceWorker cached broken JS hashes
+      window.addEventListener('error', function(e) {
+        if (e && e.filename && e.filename.includes('/assets/')) {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              for (let reg of regs) reg.unregister();
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (let key of keys) caches.delete(key);
+            });
+          }
+        }
+      });
+      setTimeout(function() {
+        var root = document.getElementById('root');
+        if (!root || !root.children || root.children.length === 0) {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+              for (let reg of regs) reg.unregister();
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (let key of keys) caches.delete(key);
+            });
+          }
+          window.location.reload();
+        }
+      }, 2000);
+    </script>
   </head>
   <body>
     <div id="root"></div>
