@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchStopETAs } from '../services/avanzaApi';
+import { fetchStopETAs, getFallbackETAs } from '../services/avanzaApi';
 import { SORIA_LINES } from '../data/soriaLines';
 import { CAMARETAS_TIMETABLE } from '../data/camaretasSchedule';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
@@ -7,19 +7,19 @@ import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 export default function StopDetailModal({ stop, onClose }) {
   const isLcStop = stop.lines.includes('LC');
   const [activeTab, setActiveTab] = useState(isLcStop ? 'schedule' : 'realtime');
-  const [etas, setEtas] = useState([]);
-  const [isLoading, setIsLoading] = useState(!isLcStop);
+  const [etas, setEtas] = useState(() => isLcStop ? [] : getFallbackETAs(stop.id));
+  const [isRefreshing, setIsRefreshing] = useState(!isLcStop);
 
   useEffect(() => {
     if (isLcStop) return;
 
     let cancelled = false;
     async function load() {
-      setIsLoading(true);
+      setIsRefreshing(true);
       const data = await fetchStopETAs(stop.id);
       if (!cancelled) {
         setEtas(data);
-        setIsLoading(false);
+        setIsRefreshing(false);
       }
     }
     load();
@@ -71,12 +71,15 @@ export default function StopDetailModal({ stop, onClose }) {
         <div className="modal-body">
           {activeTab === 'realtime' && !isLcStop && (
             <div className="space-y">
-              {isLoading ? (
-                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  <div className="spinner" style={{ display: 'inline-block', fontSize: 24, marginBottom: 8 }}>🔄</div>
-                  <p className="text-xs">Consultando SAE Avanza Soria...</p>
+              {isRefreshing && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', background: 'rgba(59, 130, 246, 0.08)', borderRadius: '6px', border: '1px solid rgba(59, 130, 246, 0.2)', marginBottom: '8px' }}>
+                  <span className="text-xxs text-secondary" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}>
+                    <span style={{ fontSize: '12px' }}>🔄</span> Actualizando señal GPS de Avanza...
+                  </span>
                 </div>
-              ) : etas.length === 0 ? (
+              )}
+
+              {etas.length === 0 ? (
                 <div style={{ padding: '40px 0', textAlign: 'center' }}>
                   <p style={{ fontSize: 32, marginBottom: 8 }}>🌙</p>
                   <p style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-secondary)' }}>Sin autobuses próximos</p>

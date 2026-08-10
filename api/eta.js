@@ -30,7 +30,7 @@ export default async function handler(req, res) {
 
     const data = await response.json();
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 's-maxage=5, stale-while-revalidate=5');
+    res.setHeader('Cache-Control', 's-maxage=10, stale-while-revalidate=15');
     return res.status(200).json(data);
   } catch (error) {
     console.error("Error querying Avanza API in Vercel serverless proxy:", error);
