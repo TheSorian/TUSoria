@@ -66,9 +66,11 @@ function getTrimmedLegPolyline(fullCoordsArrays, boardCoords, alightCoords) {
 
 function isExtensionPoint(lat, lng, lineCode) {
   if (lineCode === 'L2') {
-    return lat > 41.7725;
+    // Only internal Polígono Industrial loop north of Calle H / Av. Valladolid
+    return lat > 41.7742;
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
+    // Calaverón extension loop
     return lat >= 41.7595 && lat <= 41.7615 && lng >= -2.4680 && lng <= -2.4650;
   }
   return false;
@@ -90,10 +92,10 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
       currentSegment.push(pt);
       if (currentIsExt) {
         L.polyline(currentSegment, {
-          color: '#f59e0b',
-          weight: isRouteActive ? 3 : 5,
+          color: color, // Uses line's own color!
+          weight: isRouteActive ? 4 : 5,
           dashArray: '8, 8',
-          opacity: isRouteActive ? 0.4 : 0.95
+          opacity: isRouteActive ? 0.5 : 0.95
         }).addTo(layerGroup);
       } else {
         L.polyline(currentSegment, {
@@ -110,10 +112,10 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
   if (currentSegment.length > 1) {
     if (currentIsExt) {
       L.polyline(currentSegment, {
-        color: '#f59e0b',
-        weight: isRouteActive ? 3 : 5,
+        color: color, // Uses line's own color!
+        weight: isRouteActive ? 4 : 5,
         dashArray: '8, 8',
-        opacity: isRouteActive ? 0.4 : 0.95
+        opacity: isRouteActive ? 0.5 : 0.95
       }).addTo(layerGroup);
     } else {
       L.polyline(currentSegment, {
