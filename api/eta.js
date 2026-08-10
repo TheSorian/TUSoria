@@ -1,4 +1,4 @@
-import https from 'https';
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 export default async function handler(req, res) {
   const { stopId } = req.query;
@@ -14,11 +14,6 @@ export default async function handler(req, res) {
   }).toString();
 
   try {
-    // Agent to bypass Avanza's SSL certificate chain verification issue
-    const agent = new https.Agent({
-      rejectUnauthorized: false
-    });
-
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -26,8 +21,7 @@ export default async function handler(req, res) {
         'X-Requested-With': 'XMLHttpRequest',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
       },
-      body: bodyData,
-      agent
+      body: bodyData
     });
 
     if (!response.ok) {
