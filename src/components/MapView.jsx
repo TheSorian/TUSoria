@@ -143,8 +143,8 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
         const angle = Math.atan2(dx, dy) * (180 / Math.PI);
         const arrowIcon = L.divIcon({
           className: 'polyline-arrow-marker',
-          html: `<div style="transform: rotate(${angle.toFixed(1)}deg); width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: ${isRouteActive ? 0.7 : 1};">
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="#ffffff" stroke="none">
+          html: `<div style="transform: rotate(${angle.toFixed(1)}deg); width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: ${isRouteActive ? 0.9 : 1};">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="${color}" stroke="none">
               <path d="M12 2L2 22l10-4 10 4z"/>
             </svg>
           </div>`,
@@ -440,7 +440,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
               if (p1 && p2) {
                 const arrowIcon = L.divIcon({
                   className: 'route-direction-arrow',
-                  html: `<div style="color:#ffffff; font-size:16px; font-weight:bold; pointer-events:none;">➔</div>`,
+                  html: `<div style="color:${color}; font-size:16px; font-weight:bold; pointer-events:none;">➔</div>`,
                   iconSize: [20, 20],
                   iconAnchor: [10, 10]
                 });
