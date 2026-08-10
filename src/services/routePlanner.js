@@ -1,7 +1,7 @@
 import { SORIA_KEY_PLACES, SORIA_LINES } from '../data/soriaLines';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
-import { fetchStopETAs } from './avanzaApi';
+import { fetchStopETAs, isLineActiveToday } from './avanzaApi';
 
 export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
@@ -22,6 +22,16 @@ export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
  * Get next departure time and waiting minutes based on official schedules and real-time SAE API
  */
 export async function getNextDepartureInfo(lineCode, stopId, stopName) {
+  const now = new Date();
+  if (!isLineActiveToday(lineCode, now)) {
+    return {
+      timeStr: 'Sin servicio hoy',
+      waitMin: 999,
+      isRealTime: false,
+      isStarred: false,
+      label: lineCode === 'C' ? 'Solo domingos y festivos' : 'Sin servicio los domingos'
+    };
+  }
   // 1. Try real-time SAE API first
   try {
     const etas = await fetchStopETAs(stopId);
@@ -42,7 +52,6 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName) {
   }
 
   // 2. Fallback to Official Avanza Full Timetable Matrix
-  const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
   const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
@@ -345,8 +354,8 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
   let directRoutes = [];
   originStops.forEach(oStop => {
     destStops.forEach(dStop => {
-      // Find common lines between this origin stop and this destination stop
-      const commonLines = oStop.lines.filter(line => dStop.lines.includes(line));
+      // Find common lines between this origin stop and this destination stop that are active today
+      const commonLines = oStop.lines.filter(line => dStop.lines.includes(line) && isLineActiveToday(line));
       commonLines.forEach(lineCode => {
         directRoutes.push({
           oStop, dStop, lineCode, 

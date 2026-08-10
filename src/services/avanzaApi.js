@@ -76,6 +76,20 @@ export async function fetchServiceAlerts() {
   return SERVICE_ALERTS;
 }
 
+export function isLineActiveToday(lineCode, date = new Date()) {
+  const day = date.getDay(); // 0 = Sunday, 6 = Saturday, 1..5 = Mon..Fri
+  if (lineCode === 'C') {
+    return day === 0; // Line C ONLY runs on Sundays & holidays
+  }
+  if (['L1', 'L2', 'L3', 'L4'].includes(lineCode)) {
+    return day !== 0; // Mon-Sat
+  }
+  if (lineCode === 'L4E' || lineCode === 'EX') {
+    return day >= 1 && day <= 5; // Mon-Fri
+  }
+  return true;
+}
+
 /**
  * Compute realistic stop-specific ETAs based on the exact lines serving the stop and schedule matrix
  */
@@ -98,6 +112,7 @@ export function getFallbackETAs(stopId) {
 
   stopObj.lines.forEach((lineCode, lIdx) => {
     if (lineCode === 'LC') return;
+    if (!isLineActiveToday(lineCode, now)) return; // Skip lines not active today!
 
     const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
     if (!lineSched || !lineSched.stops) return;
