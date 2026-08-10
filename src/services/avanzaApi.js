@@ -37,7 +37,11 @@ export async function fetchStopETAs(stopId) {
     );
 
     if (filtered.length > 0) {
-      return filtered;
+      return filtered.map(b => ({
+        ...b,
+        isLive: true,
+        minutesArrive: b.minutesArrive != null ? b.minutesArrive : b.minutesRemaining
+      }));
     }
     return getFallbackETAs(stopId);
   } catch (error) {
@@ -146,6 +150,7 @@ export function getFallbackETAs(stopId) {
         idBus: `S-${100 + lIdx * 4 + 2}`,
         minutesArrive: minDiff,
         arrivalTime: timeStr,
+        isLive: false,
         desDepartureBusStop: stopObj.name,
         desArrivalBusStop: lineCode === 'L1' || lineCode === 'L3' ? 'Hospital Sta. Bárbara' : lineCode === 'L2' ? 'Polígono / Estación' : 'Mariano Granados'
       });

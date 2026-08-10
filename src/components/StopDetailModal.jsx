@@ -84,23 +84,60 @@ export default function StopDetailModal({ stop, onClose }) {
                 </div>
               ) : (
                 etas.map((eta, idx) => (
-                  <div key={idx} className="card" style={{ display: 'flex', itemsCenter: 'center', justifyBetween: 'space-between' }}>
+                  <div key={idx} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span className="line-badge" style={{ background: getLineColor(eta.desBusLine) }}>
                         {eta.desBusLine || '?'}
                       </span>
                       <div>
-                        <p style={{ fontWeight: 600, fontSize: 13 }}>
-                          {eta.desArrivalBusStop || 'Destino'}
-                        </p>
-                        <p className="text-xxs text-muted">Bus #{eta.idBus || '—'}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <p style={{ fontWeight: 600, fontSize: 13, margin: 0 }}>
+                            {eta.desArrivalBusStop || 'Destino'}
+                          </p>
+                          {eta.isLive ? (
+                            <span style={{ 
+                              display: 'inline-flex', 
+                              alignItems: 'center', 
+                              gap: 4, 
+                              background: 'rgba(16, 185, 129, 0.18)', 
+                              color: '#10b981', 
+                              border: '1px solid rgba(16, 185, 129, 0.4)',
+                              padding: '2px 6px', 
+                              borderRadius: 4, 
+                              fontSize: 10, 
+                              fontWeight: 800 
+                            }}>
+                              <span style={{ 
+                                width: 6, 
+                                height: 6, 
+                                borderRadius: '50%', 
+                                background: '#10b981', 
+                                boxShadow: '0 0 6px #10b981'
+                              }}></span>
+                              📡 En Vivo
+                            </span>
+                          ) : (
+                            <span style={{ 
+                              display: 'inline-block', 
+                              background: 'var(--bg-elevated)', 
+                              color: 'var(--text-muted)', 
+                              border: '1px solid var(--border-subtle)',
+                              padding: '2px 6px', 
+                              borderRadius: 4, 
+                              fontSize: 10 
+                            }}>
+                              📅 Programado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xxs text-muted" style={{ marginTop: 2 }}>Bus #{eta.idBus || '—'}</p>
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--green)' }}>
+                      <span style={{ fontSize: 20, fontWeight: 800, color: eta.isLive ? 'var(--green)' : 'var(--text-primary)' }}>
                         {eta.minutesArrive}
                       </span>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--green)', marginLeft: 2 }}>min</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: eta.isLive ? 'var(--green)' : 'var(--text-primary)', marginLeft: 2 }}>min</span>
                       <p className="text-xxs text-muted" style={{ marginTop: 2 }}>{eta.arrivalTime}</p>
                     </div>
                   </div>
