@@ -1,5 +1,7 @@
 import { SORIA_KEY_PLACES, SORIA_LINES } from '../data/soriaLines';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
+import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
+import { fetchStopETAs } from './avanzaApi';
 
 export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
@@ -14,6 +16,85 @@ export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
   return Math.round(R * c);
+}
+
+/**
+ * Get next departure time and waiting minutes based on official schedules and real-time SAE API
+ */
+export async function getNextDepartureInfo(lineCode, stopId, stopName) {
+  // 1. Try real-time SAE API first
+  try {
+    const etas = await fetchStopETAs(stopId);
+    if (etas && etas.length > 0) {
+      const matchingBus = etas.find(b => b.lineCode === lineCode || b.desBusLine === lineCode);
+      if (matchingBus && matchingBus.minutesRemaining != null) {
+        return {
+          timeStr: `${matchingBus.minutesRemaining} min`,
+          waitMin: Math.max(1, matchingBus.minutesRemaining),
+          isRealTime: true,
+          isStarred: false,
+          label: `SAE en Vivo (${matchingBus.minutesRemaining} min)`
+        };
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch SAE real-time ETA for route planner", e);
+  }
+
+  // 2. Fallback to Official Avanza Full Timetable Matrix
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+  const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+  if (lineSched && lineSched.stops) {
+    const matchStop = lineSched.stops.find(s => {
+      const sNum = String(s.num);
+      const stId = String(stopId);
+      if (sNum === stId) return true;
+      const sName = s.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const targetName = stopName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return sName.includes(targetName) || targetName.includes(sName);
+    });
+
+    if (matchStop && matchStop.tripTimes) {
+      let bestNext = null;
+      let minDiff = Infinity;
+      let isStarred = false;
+
+      matchStop.tripTimes.forEach((tStr, idx) => {
+        if (!tStr) return;
+        const [h, m] = tStr.split(':').map(Number);
+        const tripMin = h * 60 + m;
+        const diff = tripMin - currentMinutes;
+
+        if (diff >= 0 && diff < minDiff) {
+          minDiff = diff;
+          bestNext = tStr;
+          const colType = lineSched.colTypes?.[idx] || '';
+          isStarred = colType.includes('*');
+        }
+      });
+
+      if (bestNext) {
+        return {
+          timeStr: bestNext,
+          waitMin: minDiff,
+          isRealTime: false,
+          isStarred,
+          label: `Horario oficial: ${bestNext}${isStarred ? ' (*Calaverón/Polígono)' : ''}`
+        };
+      }
+    }
+  }
+
+  // Fallback heuristic default
+  return {
+    timeStr: 'Frecuencia regular',
+    waitMin: 6,
+    isRealTime: false,
+    isStarred: false,
+    label: 'Horario habitual'
+  };
 }
 
 /**
@@ -280,15 +361,16 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
   directRoutes.sort((a, b) => (a.walkDistTotal + a.busDist) - (b.walkDistTotal + b.busDist));
 
   // Add top direct routes
-  directRoutes.slice(0, 2).forEach(route => {
+  for (const route of directRoutes.slice(0, 2)) {
     const lineInfo = SORIA_LINES.find(l => l.code === route.lineCode);
     const hasRoadworks = false;
     
-    // Time heuristic: Walk 1.2 m/s (~70m/min). Bus ~250m/min. Wait ~5min.
+    const depInfo = await getNextDepartureInfo(route.lineCode, route.oStop.id, route.oStop.name);
+    
     const walk1Min = Math.max(1, Math.round(route.oStop.dist / 70));
     const walk2Min = Math.max(1, Math.round(route.dStop.dist / 70));
     const busMin = Math.max(2, Math.round(route.busDist / 250));
-    const waitMin = 5;
+    const waitMin = depInfo.waitMin;
 
     results.push({
       id: `direct-${route.lineCode}-${route.oStop.id}-${route.dStop.id}`,
@@ -304,6 +386,7 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
       oStop: route.oStop,
       dStop: route.dStop,
       hasRoadworks,
+      departureInfo: depInfo,
       legs: [
         {
           mode: 'walk',
@@ -325,7 +408,10 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
           alightStopId: route.dStop.id,
           alightCoords: [route.dStop.lat, route.dStop.lng],
           timeMin: busMin,
-          realTimeMin: waitMin
+          realTimeMin: waitMin,
+          scheduledDeparture: depInfo.timeStr,
+          departureLabel: depInfo.label,
+          isStarred: depInfo.isStarred
         },
         {
           mode: 'walk',
@@ -338,7 +424,7 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
       ],
       googleMapsUrl: generateGoogleMapsUrl(originGeo, destGeo)
     });
-  });
+  }
 
   // 2. SEARCH FOR 1-TRANSFER ROUTES (If less than maxResults found directly)
   if (results.length < maxResults) {

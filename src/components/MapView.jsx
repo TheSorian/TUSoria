@@ -16,6 +16,51 @@ const LINE_COLORS = {
   'LC': '#059669'
 };
 
+function findClosestPointIndex(coords, point) {
+  if (!coords || !point) return 0;
+  let minD = Infinity;
+  let minIdx = 0;
+  for (let i = 0; i < coords.length; i++) {
+    const lat = parseFloat(coords[i][0]);
+    const lng = parseFloat(coords[i][1]);
+    const d = (lat - point[0]) ** 2 + (lng - point[1]) ** 2;
+    if (d < minD) {
+      minD = d;
+      minIdx = i;
+    }
+  }
+  return minIdx;
+}
+
+function getTrimmedLegPolyline(fullCoordsArrays, boardCoords, alightCoords) {
+  if (!fullCoordsArrays || fullCoordsArrays.length === 0) return [];
+  if (!boardCoords || !alightCoords) return fullCoordsArrays[0] || [];
+
+  let bestSub = fullCoordsArrays[0];
+  let minD = Infinity;
+  fullCoordsArrays.forEach(arr => {
+    const idx = findClosestPointIndex(arr, boardCoords);
+    const lat = parseFloat(arr[idx][0]);
+    const lng = parseFloat(arr[idx][1]);
+    const d = (lat - boardCoords[0])**2 + (lng - boardCoords[1])**2;
+    if (d < minD) {
+      minD = d;
+      bestSub = arr;
+    }
+  });
+
+  const startIdx = findClosestPointIndex(bestSub, boardCoords);
+  const endIdx = findClosestPointIndex(bestSub, alightCoords);
+
+  if (startIdx <= endIdx) {
+    const seg = bestSub.slice(startIdx, endIdx + 1);
+    return [boardCoords, ...seg, alightCoords];
+  } else {
+    const seg = bestSub.slice(endIdx, startIdx + 1).reverse();
+    return [boardCoords, ...seg, alightCoords];
+  }
+}
+
 export default function MapView({ onSelectStop, activeRoute, userLocation }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -255,19 +300,36 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
         }
 
         if (leg.mode === 'bus' && leg.lineCode) {
-          const lineCoords = REAL_LINE_POLYLINES[leg.lineCode] || [];
+          const lineCoordsArrays = REAL_LINE_POLYLINES[leg.lineCode] || [];
           const color = leg.lineColor || LINE_COLORS[leg.lineCode] || '#3b82f6';
 
-          lineCoords.forEach(coords => {
-            if (coords && coords.length > 0) {
-              L.polyline(coords, {
-                color: color,
-                weight: 6,
-                opacity: 0.95
-              }).addTo(layerGroup);
-              coords.forEach(c => boundsPoints.push(c));
+          const trimmedCoords = getTrimmedLegPolyline(lineCoordsArrays, leg.boardCoords, leg.alightCoords);
+
+          if (trimmedCoords && trimmedCoords.length > 0) {
+            L.polyline(trimmedCoords, {
+              color: color,
+              weight: 7,
+              opacity: 0.95
+            }).addTo(layerGroup);
+
+            trimmedCoords.forEach(c => boundsPoints.push(c));
+
+            // Draw directional arrow in the middle of the trimmed route segment
+            if (trimmedCoords.length >= 2) {
+              const midIdx = Math.floor(trimmedCoords.length / 2);
+              const p1 = trimmedCoords[Math.max(0, midIdx - 1)];
+              const p2 = trimmedCoords[midIdx];
+              if (p1 && p2) {
+                const arrowIcon = L.divIcon({
+                  className: 'route-direction-arrow',
+                  html: `<div style="color:${color}; font-size:18px; text-shadow:0 0 4px #fff, 0 0 8px #000; font-weight:bold;">➔</div>`,
+                  iconSize: [20, 20],
+                  iconAnchor: [10, 10]
+                });
+                L.marker(p2, { icon: arrowIcon }).addTo(layerGroup);
+              }
             }
-          });
+          }
 
           // Draw Live Bus Vehicle Marker & Boarding / Alighting Waypoints
           if (leg.boardCoords) {

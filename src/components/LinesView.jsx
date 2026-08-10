@@ -9,11 +9,14 @@ export default function LinesView({ onSelectStop }) {
   const [activeTab, setActiveTab] = useState('schedule');
   const [selectedStopIdx, setSelectedStopIdx] = useState(0);
   const [showFullTable, setShowFullTable] = useState(false);
+  const [isReverseDirection, setIsReverseDirection] = useState(false);
 
   const isLcLine = selectedLine.code === 'LC';
   const currentTab = isLcLine ? 'schedule' : activeTab;
 
-  const lineStops = SORIA_ALL_STOPS.filter(s => s.lines.includes(selectedLine.code));
+  const rawLineStops = SORIA_ALL_STOPS.filter(s => s.lines.includes(selectedLine.code));
+  const lineStops = isReverseDirection ? [...rawLineStops].reverse() : rawLineStops;
+
   const fullSched = AVANZA_FULL_SCHEDULES[selectedLine.code];
   const activeStop = fullSched?.stops?.[selectedStopIdx] || fullSched?.stops?.[0];
 
@@ -56,15 +59,25 @@ export default function LinesView({ onSelectStop }) {
         </div>
         <p className="text-xs text-secondary" style={{ marginBottom: 12 }}>{selectedLine.shortName}</p>
         
-        <div style={{ paddingTop: 10, borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ paddingTop: 10, borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <span className="label" style={{ display: 'block', marginBottom: 2 }}>Cabeceras</span>
-            <span className="text-xs fw-700">{selectedLine.terminals.join(' ↔ ')}</span>
+            <span className="label" style={{ display: 'block', marginBottom: 2 }}>Sentido de Circulación</span>
+            <span className="text-xs fw-700" style={{ color: 'var(--accent-text)' }}>
+              {isReverseDirection && selectedLine.terminals[1] 
+                ? `🧭 ${selectedLine.terminals[1]} ➔ ${selectedLine.terminals[0]}`
+                : `🧭 ${selectedLine.terminals[0]} ➔ ${selectedLine.terminals[1] || 'Recorrido Circular'}`}
+            </span>
           </div>
-          <div>
-            <span className="label" style={{ display: 'block', marginBottom: 2 }}>Frecuencia General</span>
-            <span className="text-xs text-accent fw-700">{selectedLine.frequencies.workday}</span>
-          </div>
+          {selectedLine.terminals.length > 1 && (
+            <button
+              type="button"
+              className="chip"
+              onClick={() => setIsReverseDirection(!isReverseDirection)}
+              style={{ fontSize: 11, padding: '4px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
+            >
+              🔄 Cambiar Sentido
+            </button>
+          )}
         </div>
       </div>
 

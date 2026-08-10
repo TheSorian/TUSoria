@@ -116,7 +116,7 @@ const RoutePlannerView = ({ onShowOnMap }) => {
                   }}>
                     {isDirect ? 'Directa' : '1 Transbordo'}
                   </span>
-                  <span style={{ fontWeight: 'bold' }}>{route.totalTime || route.duration} min</span>
+                  <span style={{ fontWeight: 'bold' }}>~{route.totalTimeMin || route.totalTime || route.duration} min</span>
                 </div>
                 
                 <div className="timeline" style={{ marginTop: '1rem' }}>
@@ -125,8 +125,8 @@ const RoutePlannerView = ({ onShowOnMap }) => {
                       <div className="timeline-dot flex items-center" style={{
                         backgroundColor: leg.mode === 'walk' ? '#9ca3af' : leg.mode === 'transfer' ? '#f59e0b' : (leg.lineColor || '#3b82f6'),
                         color: '#fff',
-                        width: '24px',
-                        height: '24px',
+                        width: '28px',
+                        height: '28px',
                         borderRadius: '50%',
                         justifyContent: 'center',
                         fontSize: '12px',
@@ -141,7 +141,7 @@ const RoutePlannerView = ({ onShowOnMap }) => {
                         {leg.mode === 'walk' && (
                           <div className="text-sm">
                             <div style={{ fontWeight: '500' }}>{leg.description || 'Caminar'}</div>
-                            {leg.distance && <div className="text-xs text-muted">{leg.distance}</div>}
+                            {leg.distanceMeters && <div className="text-xs text-muted">{leg.distanceMeters} metros ({leg.timeMin} min)</div>}
                           </div>
                         )}
                         {leg.mode === 'transfer' && (
@@ -151,10 +151,24 @@ const RoutePlannerView = ({ onShowOnMap }) => {
                         )}
                         {leg.mode === 'bus' && (
                           <div className="text-sm">
-                            <div style={{ fontWeight: '500' }}>Línea {leg.lineCode}</div>
+                            <div style={{ fontWeight: '700', color: leg.lineColor || '#3b82f6' }}>
+                              🚌 Línea {leg.lineCode}
+                            </div>
                             <div>Sube en <span style={{ fontWeight: '600' }}>{leg.boardStop}</span></div>
                             <div>Baja en <span style={{ fontWeight: '600' }}>{leg.alightStop}</span></div>
-                            {leg.nextBusIn && <div className="text-accent text-xs" style={{ marginTop: '4px' }}>Próximo en ~{leg.nextBusIn} min</div>}
+                            
+                            {(leg.departureLabel || leg.scheduledDeparture) && (
+                              <div className="text-xs" style={{ marginTop: '4px', background: 'var(--bg-elevated)', padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border-subtle)', display: 'inline-block' }}>
+                                <span style={{ color: 'var(--green)', fontWeight: '700' }}>
+                                  ⏱️ {leg.departureLabel || `Salida: ${leg.scheduledDeparture}`}
+                                </span>
+                                {leg.isStarred && (
+                                  <span style={{ color: 'var(--amber)', marginLeft: '6px', fontWeight: 'bold' }}>
+                                    * (Vía Calaverón/Polígono)
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
