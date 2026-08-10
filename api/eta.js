@@ -1,10 +1,25 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
+// In-memory cache for ultra-fast (1ms) responses
+const memoryCache = new Map();
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL
+
 export default async function handler(req, res) {
   const { stopId } = req.query;
 
   if (!stopId) {
     return res.status(400).json({ error: 'stopId parameter is required' });
+  }
+
+  const now = Date.now();
+  const cached = memoryCache.get(stopId);
+
+  // Return from in-memory cache if fresh
+  if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=30, stale-while-revalidate=120');
+    res.setHeader('X-Cache-Status', 'HIT-MEMORY');
+    return res.status(200).json(cached.data);
   }
 
   const endpoint = `https://soria.avanzagrupo.com/detalleparada?p_p_id=adoParadaFecha_AdoParadaFechaPortlet_INSTANCE_cjPafX1mEmsC&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage&_adoParadaFecha_AdoParadaFechaPortlet_INSTANCE_cjPafX1mEmsC_cmd=getETAS`;
@@ -25,14 +40,29 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
+      if (cached) {
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('X-Cache-Status', 'EXPIRED-FALLBACK');
+        return res.status(200).json(cached.data);
+      }
       return res.status(response.status).json({ error: `Avanza server returned HTTP ${response.status}` });
     }
 
     const data = await response.json();
+
+    // Cache in memory
+    memoryCache.set(stopId, { timestamp: now, data });
+
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 's-maxage=10, stale-while-revalidate=15');
+    res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=30, stale-while-revalidate=120');
+    res.setHeader('X-Cache-Status', 'MISS-FETCHED');
     return res.status(200).json(data);
   } catch (error) {
+    if (cached) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('X-Cache-Status', 'EXPIRED-FALLBACK-ERROR');
+      return res.status(200).json(cached.data);
+    }
     console.error("Error querying Avanza API in Vercel serverless proxy:", error);
     return res.status(500).json({ error: error.message });
   }
