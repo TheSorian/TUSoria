@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { SORIA_ALL_STOPS as DEFAULT_STOPS, REAL_LINE_POLYLINES } from '../data/soriaLinesData';
+import { getAllLiveBuses } from '../services/avanzaApi';
 
 const LINES = ['L1', 'L2', 'L3', 'L4', 'L4E', 'C', 'EX', 'LC'];
 
@@ -201,8 +202,65 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
 export default function MapView({ onSelectStop, activeRoute, userLocation }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
-  const layersRef = useRef(null);
+  const busesLayerRef = useRef(null);
+  const [liveBuses, setLiveBuses] = useState([]);
   const [selectedLineFilter, setSelectedLineFilter] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchBuses = async () => {
+      const buses = await getAllLiveBuses();
+      if (mounted) setLiveBuses(buses);
+    };
+    fetchBuses();
+    const interval = setInterval(fetchBuses, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (busesLayerRef.current) {
+      mapRef.current.removeLayer(busesLayerRef.current);
+    }
+    busesLayerRef.current = L.layerGroup().addTo(mapRef.current);
+    
+    liveBuses.forEach(b => {
+      const lineFilter = selectedLineFilter ? selectedLineFilter.replace('E','') : null;
+      if (lineFilter && !b.line.includes(lineFilter)) return;
+      
+      const bColor = LINE_COLORS[b.line] || '#ffffff';
+      const bIcon = L.divIcon({
+        className: 'global-live-bus-marker',
+        html: `
+          <div style="position: relative; display: flex; align-items: center; justify-content: center; z-index: 1000;">
+            <div style="
+              width: 32px; 
+              height: 32px; 
+              background: ${bColor}; 
+              border: 3px solid white; 
+              border-radius: 50%; 
+              box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-weight: 900;
+              font-size: 14px;
+            ">
+              ${b.line.replace('L','')}
+            </div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      L.marker([b.lat, b.lng], { icon: bIcon, zIndexOffset: 1000 }).addTo(busesLayerRef.current);
+    });
+  }, [liveBuses, selectedLineFilter]);
+  const layersRef = useRef(null);
   
   // Interactive Stop Edit Mode State
   const [isEditMode, setIsEditMode] = useState(false);
@@ -687,34 +745,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
         </div>
       )}
 
-      {/* Floating Map Legend for Prolongations */}
-      <div style={{
-        position: 'absolute',
-        top: 12,
-        left: 12,
-        zIndex: 1000,
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(8px)',
-        border: '1px solid rgba(255,255,255,0.15)',
-        borderRadius: '8px',
-        padding: '6px 10px',
-        fontSize: '11px',
-        color: '#f8fafc',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-        pointerEvents: 'none'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ width: '14px', height: '3px', background: '#3b82f6', borderRadius: '2px', display: 'inline-block' }}></span>
-          <span>Ruta Estándar</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ borderBottom: '2px dashed #f59e0b', width: '16px', display: 'inline-block' }}></span>
-          <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>⭐ Prolongación (*)</span>
-        </div>
-      </div>
+
 
       {/* Floating Line Chips Filter */}
       <div className="map-float-controls no-scrollbar">

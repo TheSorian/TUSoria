@@ -101,7 +101,16 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
         {/* Advanced From/To Toggle */}
         <div className="flex items-center" style={{ justifyContent: 'space-between', marginBottom: isAdvancedMode ? 8 : 0 }}>
           <div className="flex items-center gap-2" style={{ flex: 1 }}>
-            <span style={{ fontSize: '1.1rem' }}>🔍</span>
+            <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', borderRadius: '8px', boxShadow: '0 2px 6px rgba(37,99,235,0.4)', flexShrink: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="3" width="16" height="16" rx="2" ry="2"></rect>
+                <path d="M4 11h16"></path>
+                <path d="M8 15h.01"></path>
+                <path d="M16 15h.01"></path>
+                <path d="M6 19v2"></path>
+                <path d="M18 19v2"></path>
+              </svg>
+            </div>
             <input
               type="text"
               className="search-input"

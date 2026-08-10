@@ -86,10 +86,56 @@ export async function fetchStopETAs(stopId) {
               const bLat = parseFloat(b.latitude);
               const bLng = parseFloat(b.longitude);
               if (bLat !== 0 && bLng !== 0) {
-                const dist = calculateDistanceMeters(targetStop.lat, targetStop.lng, bLat, bLng);
-                // Calculate ETA purely based on distance (approx 300m per min in city)
-                // This is a rough estimate but much better than identical ETAs for all stops
-                mins = Math.max(1, Math.round(dist / 300));
+                let interpolatedMins = null;
+                const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+                if (lineSched && lineSched.stops) {
+                  let minD = Infinity;
+                  let closestIdx = -1;
+                  lineSched.stops.forEach((s, idx) => {
+                    const sData = SORIA_ALL_STOPS.find(st => st.name === s.stopName);
+                    if (sData) {
+                      const d = calculateDistanceMeters(sData.lat, sData.lng, bLat, bLng);
+                      if (d < minD) {
+                        minD = d;
+                        closestIdx = idx;
+                      }
+                    }
+                  });
+
+                  const targetIdx = lineSched.stops.findIndex(s => s.stopName === targetStop.name);
+                  if (closestIdx !== -1 && targetIdx !== -1 && targetIdx >= closestIdx) {
+                    const closestTimes = lineSched.stops[closestIdx].tripTimes;
+                    const targetTimes = lineSched.stops[targetIdx].tripTimes;
+                    let minTimeDiff = Infinity;
+                    let smallestDiffToNow = Infinity;
+                    
+                    for (let i = 0; i < closestTimes.length; i++) {
+                      if (closestTimes[i] && targetTimes[i]) {
+                        const [h1, m1] = closestTimes[i].split(':').map(Number);
+                        const [h2, m2] = targetTimes[i].split(':').map(Number);
+                        const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+                        
+                        if (diff >= 0) {
+                          const schedMins = h1 * 60 + m1;
+                          const diffToNow = Math.abs(schedMins - curMin);
+                          
+                          // Match the trip that is closest to the current time
+                          if (diffToNow < smallestDiffToNow) {
+                            smallestDiffToNow = diffToNow;
+                            minTimeDiff = diff;
+                          }
+                        }
+                      }
+                    }
+                    if (minTimeDiff !== Infinity) {
+                      interpolatedMins = minTimeDiff + 1; // +1 min padding
+                    }
+                  }
+                }
+                
+                if (interpolatedMins !== null) {
+                  mins = Math.max(1, interpolatedMins);
+                }
               }
             }
 
@@ -255,3 +301,29 @@ export function getFallbackETAs(stopId) {
   return results;
 }
 
+
+
+export async function getAllLiveBuses() {
+  try {
+    const response = await fetch('/api/eta?stopId=1');
+    if (response.ok) {
+      const data = await response.json();
+      const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
+      const filtered = rawTraffics.filter(b => 
+        (!b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')) &&
+        b.latitude && b.longitude && parseFloat(b.latitude) !== 0 && parseFloat(b.longitude) !== 0
+      );
+      
+      return filtered.map(b => ({
+        id: b.idBus || Math.random().toString(),
+        line: b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1'),
+        lat: parseFloat(b.latitude),
+        lng: parseFloat(b.longitude),
+        minutes: b.minutesArrive
+      }));
+    }
+  } catch (err) {
+    console.warn('Failed to fetch global live buses', err);
+  }
+  return [];
+}
