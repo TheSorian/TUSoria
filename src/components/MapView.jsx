@@ -64,28 +64,29 @@ function getTrimmedLegPolyline(fullCoordsArrays, boardCoords, alightCoords) {
   }
 }
 
-function isExtensionPoint(lat, lng, lineCode) {
+function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
   if (lineCode === 'L2') {
-    // Only internal Polígono Industrial loop (Prolongación)
-    // Calle H (Standard) is at 41.7715. Calle H / Calle N (Prolongada) is at 41.7725.
-    return lat > 41.7720;
+    // Only prolongation sub-polyline (polyIdx === 1) north of Calle N / Calle J
+    if (polyIdx !== 1) return false;
+    return lat > 41.7725 || (lat > 41.7720 && lng < -2.4885);
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
-    // Calaverón extension loop
+    // Calaverón extension loop (polyIdx === 1 or lat/lng inside Calaverón box)
+    if (polyIdx === 1) return true;
     return lat >= 41.7595 && lat <= 41.7615 && lng >= -2.4680 && lng <= -2.4650;
   }
   return false;
 }
 
-function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup) {
+function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup, polyIdx = 0) {
   if (!coords || coords.length === 0) return;
 
   let currentSegment = [coords[0]];
-  let currentIsExt = isExtensionPoint(parseFloat(coords[0][0]), parseFloat(coords[0][1]), lineCode);
+  let currentIsExt = isExtensionPoint(parseFloat(coords[0][0]), parseFloat(coords[0][1]), lineCode, polyIdx);
 
   for (let i = 1; i < coords.length; i++) {
     const pt = coords[i];
-    const isExt = isExtensionPoint(parseFloat(pt[0]), parseFloat(pt[1]), lineCode);
+    const isExt = isExtensionPoint(parseFloat(pt[0]), parseFloat(pt[1]), lineCode, polyIdx);
 
     if (isExt === currentIsExt) {
       currentSegment.push(pt);
@@ -234,9 +235,9 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       const polylineArrays = REAL_LINE_POLYLINES[lineCode] || [];
       const color = LINE_COLORS[lineCode] || '#3b82f6';
 
-      polylineArrays.forEach(coords => {
+      polylineArrays.forEach((coords, polyIdx) => {
         if (coords && coords.length > 0) {
-          renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup);
+          renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup, polyIdx);
         }
       });
     });
