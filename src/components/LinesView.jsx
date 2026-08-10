@@ -21,10 +21,7 @@ export default function LinesView({ onSelectStop }) {
   return (
     <div className="space-y" style={{ maxWidth: 800, margin: '0 auto' }}>
       
-      {/* Green Update Banner */}
-      <div style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid var(--green)', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span>✅ Actualizado: Horarios oficiales por parada con y sin Calaverón (*)</span>
-      </div>
+
 
       {/* Line Chips Selector */}
       <div className="flex gap-2 no-scrollbar" style={{ overflowX: 'auto', paddingBottom: 4 }}>
