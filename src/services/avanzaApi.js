@@ -4,14 +4,27 @@ import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
 /**
  * Fetch real-time arrivals for a specific stop ID in Soria
  */
 export async function fetchStopETAs(stopId) {
-  // 1. Query Vercel Serverless proxy (bypasses browser CORS & Avanza SSL cert chain error)
-  const proxyEndpoint = `/api/eta?stopId=${encodeURIComponent(stopId)}`;
+  const targetStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
+  const targetLines = targetStop ? targetStop.lines : [];
 
+  // 1. Try querying the specific stopId directly
   try {
+    const proxyEndpoint = `/api/eta?stopId=${encodeURIComponent(stopId)}`;
     const response = await fetch(proxyEndpoint);
     if (response.ok) {
       const data = await response.json();
@@ -30,10 +43,74 @@ export async function fetchStopETAs(stopId) {
       }
     }
   } catch (error) {
-    console.warn(`[TUSoria API] Fetch real-time proxy error for stop ${stopId}:`, error);
+    console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying master hub query...`, error);
   }
 
-  // 2. Fallback to stop-specific schedule matrix if offline / service closed
+  // 2. MASTER HUB FALLBACK: Query Stop 1 (Mariano Granados) which returns ALL active buses running in Soria
+  try {
+    const masterEndpoint = `/api/eta?stopId=1`;
+    const response = await fetch(masterEndpoint);
+    if (response.ok) {
+      const data = await response.json();
+      const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
+      const filtered = rawTraffics.filter(b => 
+        !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
+      );
+
+      if (filtered.length > 0) {
+        const matchingBuses = [];
+        const now = new Date();
+        const curMin = now.getHours() * 60 + now.getMinutes();
+
+        filtered.forEach(b => {
+          const lineCode = b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1');
+          
+          if (!targetLines || targetLines.length === 0 || targetLines.includes(lineCode)) {
+            let mins = b.minutesArrive != null ? b.minutesArrive : 15;
+            
+            if (targetStop && b.latitude && b.longitude) {
+              const bLat = parseFloat(b.latitude);
+              const bLng = parseFloat(b.longitude);
+              const dist = calculateDistanceMeters(targetStop.lat, targetStop.lng, bLat, bLng);
+              const extraMins = Math.round(dist / 350); // approx 350m per min in city
+              mins = Math.max(2, Math.min(60, mins + extraMins));
+            }
+
+            const arrHour = Math.floor((curMin + mins) / 60) % 24;
+            const arrMin = (curMin + mins) % 60;
+            const timeStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
+
+            matchingBuses.push({
+              ...b,
+              isLive: true,
+              desBusLine: lineCode,
+              minutesArrive: mins,
+              arrivalTime: timeStr,
+              desArrivalBusStop: lineCode === 'L1' || lineCode === 'L3' ? 'Hospital Sta. Bárbara' : lineCode === 'L2' ? 'Polígono / Estación' : 'Mariano Granados'
+            });
+          }
+        });
+
+        if (matchingBuses.length > 0) {
+          const uniqueBuses = [];
+          const seen = new Set();
+          matchingBuses.forEach(b => {
+            const key = `${b.desBusLine}-${b.minutesArrive}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              uniqueBuses.push(b);
+            }
+          });
+          uniqueBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
+          return uniqueBuses;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`[TUSoria API] Master hub query failed:`, error);
+  }
+
+  // 3. Fallback to stop-specific schedule matrix if offline / night time
   return getFallbackETAs(stopId);
 }
 
