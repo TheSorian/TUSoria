@@ -72,7 +72,7 @@ function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
   }
   if (lineCode === 'L1' || lineCode === 'L3') {
     // Calaverón detour loop (Juan Antonio Simón, Morales Contreras, Santa Clara, Alberca)
-    return lat >= 41.7585 && lat <= 41.7632 && lng >= -2.4685 && lng <= -2.4630;
+    return lat >= 41.7585 && lat <= 41.7636 && lng >= -2.4690 && lng <= -2.4630;
   }
   return false;
 }
