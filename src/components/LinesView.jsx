@@ -9,13 +9,11 @@ export default function LinesView({ onSelectStop }) {
   const [activeTab, setActiveTab] = useState('schedule');
   const [selectedStopIdx, setSelectedStopIdx] = useState(0);
   const [showFullTable, setShowFullTable] = useState(false);
-  const [isReverseDirection, setIsReverseDirection] = useState(false);
 
   const isLcLine = selectedLine.code === 'LC';
   const currentTab = isLcLine ? 'schedule' : activeTab;
 
-  const rawLineStops = SORIA_ALL_STOPS.filter(s => s.lines.includes(selectedLine.code));
-  const lineStops = isReverseDirection ? [...rawLineStops].reverse() : rawLineStops;
+  const lineStops = SORIA_ALL_STOPS.filter(s => s.lines.includes(selectedLine.code));
 
   const fullSched = AVANZA_FULL_SCHEDULES[selectedLine.code];
   const activeStop = fullSched?.stops?.[selectedStopIdx] || fullSched?.stops?.[0];
@@ -63,21 +61,13 @@ export default function LinesView({ onSelectStop }) {
           <div>
             <span className="label" style={{ display: 'block', marginBottom: 2 }}>Sentido de Circulación</span>
             <span className="text-xs fw-700" style={{ color: 'var(--accent-text)' }}>
-              {isReverseDirection && selectedLine.terminals[1] 
-                ? `🧭 ${selectedLine.terminals[1]} ➔ ${selectedLine.terminals[0]}`
-                : `🧭 ${selectedLine.terminals[0]} ➔ ${selectedLine.terminals[1] || 'Recorrido Circular'}`}
+              🔄 Recorrido Unidireccional: {selectedLine.terminals.join(' ➔ ')}
             </span>
           </div>
-          {selectedLine.terminals.length > 1 && (
-            <button
-              type="button"
-              className="chip"
-              onClick={() => setIsReverseDirection(!isReverseDirection)}
-              style={{ fontSize: 11, padding: '4px 10px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', cursor: 'pointer' }}
-            >
-              🔄 Cambiar Sentido
-            </button>
-          )}
+          <div>
+            <span className="label" style={{ display: 'block', marginBottom: 2 }}>Frecuencia General</span>
+            <span className="text-xs text-accent fw-700">{selectedLine.frequencies.workday}</span>
+          </div>
         </div>
       </div>
 

@@ -16,6 +16,9 @@ const LINE_COLORS = {
   'LC': '#059669'
 };
 
+const CALAVERON_STOP_IDS = ['11', '14'];
+const POLIGONO_STOP_IDS = ['79', '77', '75', '74', '76', '78', '80', '23'];
+
 function findClosestPointIndex(coords, point) {
   if (!coords || !point) return 0;
   let minD = Infinity;
@@ -158,7 +161,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       userMarker.bindPopup('<div style="color:#fff; padding:4px;">📍 Tu ubicación GPS actual</div>');
     }
     
-    // 2. Draw standard background line polylines
+    // 2. Draw background line polylines (Differentiating standard vs prolongation *Calaverón / *Polígono)
     const isRouteActive = !!activeRoute;
     Object.keys(REAL_LINE_POLYLINES).forEach(lineCode => {
       if (selectedLineFilter && lineCode !== selectedLineFilter) return;
@@ -166,8 +169,21 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       const polylineArrays = REAL_LINE_POLYLINES[lineCode] || [];
       const color = LINE_COLORS[lineCode] || '#3b82f6';
 
-      polylineArrays.forEach(coords => {
-        if (coords && coords.length > 0) {
+      polylineArrays.forEach((coords, subIdx) => {
+        if (!coords || coords.length === 0) return;
+
+        const isExtension = 
+          ((lineCode === 'L1' || lineCode === 'L3') && subIdx >= 2) ||
+          (lineCode === 'L2' && subIdx >= 1);
+
+        if (isExtension) {
+          L.polyline(coords, {
+            color: '#f59e0b',
+            weight: isRouteActive ? 3 : 5,
+            dashArray: '8, 8',
+            opacity: isRouteActive ? 0.4 : 0.95
+          }).addTo(layerGroup);
+        } else {
           L.polyline(coords, {
             color: color,
             weight: isRouteActive ? 2 : 4,
@@ -177,12 +193,20 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
       });
     });
     
-    // 3. Draw stops (Colored rounded square badge with white border & white vector bus icon inside)
+    // 3. Draw stops (Colored rounded square badge with white border & vector bus icon)
     stopsData.forEach(stop => {
       if (selectedLineFilter && !stop.lines.includes(selectedLineFilter)) return;
       
       const isLcStop = stop.lines.includes('LC');
-      const bgColor = isLcStop ? '#059669' : '#1a4b8c';
+      const isCalaveronStop = CALAVERON_STOP_IDS.includes(String(stop.id));
+      const isPoligonoExtensionStop = POLIGONO_STOP_IDS.includes(String(stop.id));
+      const isExtensionStop = isCalaveronStop || isPoligonoExtensionStop;
+
+      const bgColor = isExtensionStop 
+        ? '#f59e0b' 
+        : (isLcStop ? '#059669' : '#1a4b8c');
+
+      const borderColor = isExtensionStop ? '#fef08a' : '#ffffff';
       
       const busSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="3" rx="3"/><path d="M4 11h16"/><path d="M8 6v5"/><path d="M16 6v5"/><path d="M8 15h.01"/><path d="M16 15h.01"/><path d="M6 19v2"/><path d="M18 19v2"/></svg>`;
 
@@ -192,14 +216,14 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
           height: ${isEditMode ? '24px' : '20px'}; 
           border-radius: 6px; 
           background: ${bgColor}; 
-          border: 2px solid #ffffff; 
-          box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+          border: 2px solid ${borderColor}; 
+          box-shadow: ${isExtensionStop ? '0 0 10px rgba(245, 158, 11, 0.8)' : '0 2px 8px rgba(0,0,0,0.5)'};
           display: flex;
           align-items: center;
           justify-content: center;
           opacity: ${isRouteActive ? '0.4' : '1.0'};
         ">
-          ${isEditMode ? '🖐️' : busSvg}
+          ${isEditMode ? '🖐️' : (isExtensionStop ? '⭐' : busSvg)}
         </div>
       `;
       
@@ -232,11 +256,18 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
         });
       }
 
+      const extensionBadge = isCalaveronStop 
+        ? `<div style="font-size:10px; color:#fbbf24; font-weight:bold; margin-bottom:4px;">⭐ Prolongación (*Calaverón)</div>` 
+        : isPoligonoExtensionStop 
+        ? `<div style="font-size:10px; color:#fbbf24; font-weight:bold; margin-bottom:4px;">⭐ Prolongación (*Polígono)</div>` 
+        : '';
+
       const linesHTML = stop.lines.map(l => `<span style="display:inline-block; margin-right:4px; padding:2px 4px; background:${LINE_COLORS[l] || '#555'}; color:white; border-radius:3px; font-size:10px;">${l}</span>`).join('');
       
       const popupHTML = `
         <div style="color: #fff; background: #1f2937; padding: 10px; border-radius: 8px; width: 200px; box-sizing: border-box;">
           <h4 style="margin: 0 0 6px 0; font-size: 13px; border-bottom: 1px solid #374151; padding-bottom: 4px;">${stop.name}</h4>
+          ${extensionBadge}
           <p style="font-size: 10px; color: #9ca3af; margin-bottom: 6px;">Coordenadas: ${stop.lat.toFixed(5)}, ${stop.lng.toFixed(5)}</p>
           <div style="margin-bottom: 8px;">${linesHTML}</div>
           <button id="popup-btn-${stop.id}" style="width: 100%; background: ${isLcStop ? '#059669' : '#2563eb'}; color: white; border: none; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600;">${isLcStop ? 'Ver horarios' : 'Ver Tiempos en Vivo'}</button>
@@ -531,6 +562,35 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
           </button>
         </div>
       )}
+
+      {/* Floating Map Legend for Prolongations */}
+      <div style={{
+        position: 'absolute',
+        top: 12,
+        left: 12,
+        zIndex: 1000,
+        background: 'rgba(15, 23, 42, 0.85)',
+        backdropFilter: 'blur(8px)',
+        border: '1px solid rgba(255,255,255,0.15)',
+        borderRadius: '8px',
+        padding: '6px 10px',
+        fontSize: '11px',
+        color: '#f8fafc',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        pointerEvents: 'none'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ width: '14px', height: '3px', background: '#3b82f6', borderRadius: '2px', display: 'inline-block' }}></span>
+          <span>Ruta Estándar</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ borderBottom: '2px dashed #f59e0b', width: '16px', display: 'inline-block' }}></span>
+          <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>⭐ Prolongación (*)</span>
+        </div>
+      </div>
 
       {/* Floating Line Chips Filter */}
       <div className="map-float-controls no-scrollbar">
