@@ -131,9 +131,8 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
     }
   }
 
-  // Render direction arrows along the polyline at more regular intervals
-  // Using a smaller divisor means more arrows, and a smaller min-step means more frequent arrows on short segments
-  const arrowStep = Math.max(12, Math.floor(coords.length / 12));
+  // Render direction arrows at fixed, regular intervals
+  const arrowStep = 10;
   for (let i = arrowStep; i < coords.length - 5; i += arrowStep) {
     const p1 = coords[i - 2];
     const p2 = coords[i + 2] || coords[i + 1];
@@ -144,8 +143,8 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
         const angle = Math.atan2(dx, dy) * (180 / Math.PI);
         const arrowIcon = L.divIcon({
           className: 'polyline-arrow-marker',
-          html: `<div style="transform: rotate(${angle.toFixed(1)}deg); width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: ${isRouteActive ? 0.5 : 0.9};">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="${color}" stroke="#ffffff" stroke-width="1.5" style="filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));">
+          html: `<div style="transform: rotate(${angle.toFixed(1)}deg); width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: ${isRouteActive ? 0.7 : 1};">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="#ffffff" stroke="none">
               <path d="M12 2L2 22l10-4 10 4z"/>
             </svg>
           </div>`,
@@ -441,7 +440,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation }) {
               if (p1 && p2) {
                 const arrowIcon = L.divIcon({
                   className: 'route-direction-arrow',
-                  html: `<div style="color:${color}; font-size:18px; text-shadow:0 0 4px #fff, 0 0 8px #000; font-weight:bold;">➔</div>`,
+                  html: `<div style="color:#ffffff; font-size:16px; font-weight:bold; pointer-events:none;">➔</div>`,
                   iconSize: [20, 20],
                   iconAnchor: [10, 10]
                 });
