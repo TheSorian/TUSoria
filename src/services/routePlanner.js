@@ -38,13 +38,14 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName) {
     const etas = await fetchStopETAs(stopId);
     if (etas && etas.length > 0) {
       const matchingBus = etas.find(b => b.lineCode === lineCode || b.desBusLine === lineCode);
-      if (matchingBus && matchingBus.minutesRemaining != null) {
+      const waitMinutes = matchingBus?.minutesArrive ?? matchingBus?.minutesRemaining;
+      if (matchingBus && waitMinutes != null) {
         return {
-          timeStr: `${matchingBus.minutesRemaining} min`,
-          waitMin: Math.max(1, matchingBus.minutesRemaining),
+          timeStr: `${waitMinutes} min`,
+          waitMin: Math.max(1, waitMinutes),
           isRealTime: true,
           isStarred: false,
-          label: `SAE en Vivo (${matchingBus.minutesRemaining} min)`
+          label: `SAE en Vivo (${waitMinutes} min)`
         };
       }
     }

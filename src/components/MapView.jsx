@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { SORIA_ALL_STOPS as DEFAULT_STOPS, REAL_LINE_POLYLINES } from '../data/soriaLinesData';
-import { getAllLiveBuses } from '../services/avanzaApi';
+import { useLiveData } from '../context/LiveDataContext';
 
 const LINES = ['L1', 'L2', 'L3', 'L4', 'L4E', 'C', 'EX', 'LC'];
 
@@ -203,7 +203,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const busesLayerRef = useRef(null);
-  const [liveBuses, setLiveBuses] = useState([]);
+  const { liveBuses } = useLiveData();
   const [selectedLineFilter, setSelectedLineFilter] = useState(null);
 
   const target = selectedTarget || selectedStop;
@@ -227,35 +227,6 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
   }, [userLocation, target, activeRoute]);
 
   const busMarkersMapRef = useRef(new Map());
-  const [lastFetchTime, setLastFetchTime] = useState(Date.now());
-  const [secondsAgo, setSecondsAgo] = useState(0);
-
-  const fetchBuses = async () => {
-    const buses = await getAllLiveBuses();
-    setLiveBuses(buses);
-    setLastFetchTime(Date.now());
-    setSecondsAgo(0);
-  };
-
-  useEffect(() => {
-    let mounted = true;
-    fetchBuses();
-    const fetchInterval = setInterval(() => {
-      if (mounted) fetchBuses();
-    }, 8000);
-
-    const timerInterval = setInterval(() => {
-      if (mounted) {
-        setSecondsAgo(prev => prev + 1);
-      }
-    }, 1000);
-
-    return () => {
-      mounted = false;
-      clearInterval(fetchInterval);
-      clearInterval(timerInterval);
-    };
-  }, []);
 
   // Smooth movement animation loop:
   // Glides marker smoothly for small GPS adjustments (<= 200m), snaps instantly for large jumps (> 200m)
@@ -375,42 +346,6 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     });
   }, [liveBuses, selectedLineFilter]);
   const layersRef = useRef(null);
-  
-  // Interactive Stop Edit Mode State
-  const [isEditMode, setIsEditMode] = useState(false);
-
-  // Initialize stopsData from LocalStorage if available so user edits survive refreshes!
-  const [stopsData, setStopsData] = useState(() => {
-    try {
-      const saved = localStorage.getItem('soria_custom_stops');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Merge saved coordinates with default stops
-        return DEFAULT_STOPS.map(dStop => {
-          const savedStop = parsed.find(s => s.id === dStop.id);
-          return savedStop ? { ...dStop, lat: savedStop.lat, lng: savedStop.lng } : dStop;
-        });
-      }
-    } catch (e) {
-      console.warn("Could not load custom stops from localStorage", e);
-    }
-    return DEFAULT_STOPS;
-  });
-
-  const [lastDraggedStop, setLastDraggedStop] = useState(null);
-
-  // Save custom coordinates to localStorage whenever stopsData changes
-  const updateStopPosition = (stopId, newLat, newLng) => {
-    setStopsData(prevStops => {
-      const updated = prevStops.map(s => s.id === stopId ? { ...s, lat: newLat, lng: newLng } : s);
-      try {
-        localStorage.setItem('soria_custom_stops', JSON.stringify(updated));
-      } catch (e) {}
-      return updated;
-    });
-  };
-
-
 
   useEffect(() => {
     if (!mapRef.current && mapContainerRef.current) {
@@ -503,7 +438,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     });
     
     // 3. Draw stops (Colored rounded square badge with white border & vector bus icon)
-    stopsData.forEach(stop => {
+    DEFAULT_STOPS.forEach(stop => {
       if (selectedLineFilter && !stop.lines.includes(selectedLineFilter)) return;
       
       const isLcStop = stop.lines.includes('LC');
@@ -517,8 +452,8 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
 
       const iconHTML = `
         <div style="
-          width: ${isEditMode ? '24px' : '20px'}; 
-          height: ${isEditMode ? '24px' : '20px'}; 
+          width: 20px; 
+          height: 20px; 
           border-radius: 6px; 
           background: ${bgColor}; 
           border: 2px solid #ffffff; 
@@ -528,7 +463,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
           justify-content: center;
           opacity: ${isRouteActive ? '0.4' : '1.0'};
         ">
-          ${isEditMode ? '🖐️' : busSvg}
+          ${busSvg}
         </div>
       `;
       
@@ -539,27 +474,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
         iconAnchor: [10, 10]
       });
       
-      const marker = L.marker([stop.lat, stop.lng], { 
-        icon,
-        draggable: isEditMode
-      }).addTo(layerGroup);
-      
-      if (isEditMode) {
-        marker.on('dragend', (e) => {
-          const newPos = e.target.getLatLng();
-          const newLat = parseFloat(newPos.lat.toFixed(6));
-          const newLng = parseFloat(newPos.lng.toFixed(6));
-
-          updateStopPosition(stop.id, newLat, newLng);
-
-          setLastDraggedStop({
-            id: stop.id,
-            name: stop.name,
-            lat: newLat,
-            lng: newLng
-          });
-        });
-      }
+      const marker = L.marker([stop.lat, stop.lng], { icon }).addTo(layerGroup);
 
       const extensionBadge = isCalaveronStop 
         ? `<div style="font-size:10px; color:#fbbf24; font-weight:bold; margin-bottom:4px;">⭐ Prolongación (*Calaverón)</div>` 
@@ -755,15 +670,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
       }
     }
     
-  }, [selectedLineFilter, activeRoute, userLocation, onSelectStop, isEditMode, stopsData]);
-
-  const lcStopsOnly = stopsData.filter(s => s.lines.includes('LC'));
-
-  const handleCopyCoordinates = () => {
-    const jsonStr = JSON.stringify(lcStopsOnly, null, 2);
-    navigator.clipboard.writeText(jsonStr);
-    alert("¡Coordenadas de paradas LC copiadas al portapapeles! Pégalas aquí en el chat para guardarlas en el código.");
-  };
+  }, [selectedLineFilter, activeRoute, userLocation, onSelectStop]);
 
   return (
     <div className="map-container" style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -773,155 +680,6 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
         ref={mapContainerRef} 
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} 
       />
-
-      {/* Live Sync Status Banner */}
-      <div style={{
-        position: 'absolute',
-        top: '16px',
-        left: '16px',
-        zIndex: 1000,
-        background: 'rgba(17, 24, 39, 0.88)',
-        backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255, 255, 255, 0.15)',
-        borderRadius: '20px',
-        padding: '6px 12px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        color: '#ffffff',
-        fontSize: '11px',
-        fontWeight: '600',
-        boxShadow: '0 4px 16px rgba(0,0,0,0.5)'
-      }}>
-        <span style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: '#34d399',
-          boxShadow: '0 0 10px #34d399',
-          display: 'inline-block'
-        }} />
-        <span>En vivo • {liveBuses.length} buses ({secondsAgo}s)</span>
-        <button
-          onClick={fetchBuses}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: '#60a5fa',
-            cursor: 'pointer',
-            padding: '2px 4px',
-            fontSize: '12px',
-            display: 'flex',
-            alignItems: 'center'
-          }}
-          title="Sincronizar ahora"
-        >
-          🔄
-        </button>
-      </div>
-
-      {/* Edit Mode Toggle Button */}
-      <div style={{
-        position: 'absolute',
-        top: '16px',
-        right: '16px',
-        zIndex: 1000
-      }}>
-        <button
-          onClick={() => setIsEditMode(!isEditMode)}
-          style={{
-            padding: '8px 14px',
-            borderRadius: '12px',
-            background: isEditMode ? '#dc2626' : '#2563eb',
-            color: 'white',
-            fontWeight: 'bold',
-            fontSize: '12px',
-            border: 'none',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          <span>{isEditMode ? '🔴 Desactivar Edición' : '🎯 Reubicar Paradas en Mapa'}</span>
-        </button>
-      </div>
-
-      {/* Edit Mode Instructions & Live Coordinate Box */}
-      {isEditMode && (
-        <div style={{
-          position: 'absolute',
-          top: '60px',
-          right: '16px',
-          width: '290px',
-          zIndex: 1000,
-          background: 'rgba(17, 24, 39, 0.95)',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255,255,255,0.15)',
-          borderRadius: '12px',
-          padding: '12px',
-          color: 'white',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-          fontSize: '11px'
-        }}>
-          <h4 style={{ margin: '0 0 6px 0', fontSize: '13px', fontWeight: 'bold', color: '#60a5fa' }}>
-            🖐️ Arrastra las paradas
-          </h4>
-          <p style={{ margin: '0 0 8px 0', color: '#9ca3af', lineHeight: '1.4' }}>
-            Arrastra cualquier parada al lugar exacto. <strong>Los cambios se guardan automáticamente en tu navegador</strong> (LocalStorage).
-          </p>
-
-          {lastDraggedStop && (
-            <div style={{
-              background: 'rgba(37, 99, 235, 0.2)',
-              border: '1px solid rgba(37, 99, 235, 0.4)',
-              borderRadius: '8px',
-              padding: '8px',
-              marginTop: '6px'
-            }}>
-              <span style={{ fontWeight: 'bold', display: 'block', color: '#34d399' }}>
-                ✓ Guardado: {lastDraggedStop.name}
-              </span>
-              <code style={{ fontSize: '11px', color: '#f3f4f6' }}>
-                lat: {lastDraggedStop.lat}, lng: {lastDraggedStop.lng}
-              </code>
-            </div>
-          )}
-
-          <div style={{ marginTop: '10px', paddingTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-            <span style={{ fontWeight: 'bold', display: 'block', marginBottom: '4px', color: '#f59e0b' }}>
-              Paradas LC (Ubicación Guardada):
-            </span>
-            {lcStopsOnly.map(s => (
-              <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span style={{ color: '#d1d5db' }}>{s.name.slice(0, 16)}...:</span>
-                <span style={{ fontFamily: 'monospace', color: '#60a5fa' }}>{s.lat.toFixed(5)}, {s.lng.toFixed(5)}</span>
-              </div>
-            ))}
-          </div>
-
-          <button
-            onClick={handleCopyCoordinates}
-            style={{
-              width: '100%',
-              marginTop: '10px',
-              padding: '8px',
-              background: '#059669',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              fontSize: '11px',
-              cursor: 'pointer'
-            }}
-          >
-            📋 Copiar Coordenadas para Chat
-          </button>
-        </div>
-      )}
-
-
 
       {/* Floating Line Chips Filter */}
       <div className="map-float-controls no-scrollbar">

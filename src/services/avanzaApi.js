@@ -4,6 +4,9 @@ import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
+const AVG_BUS_SPEED_MPM = 250;
+
+export const HUB_STOP_IDS = ['1', '89', '3', '75', '85', '62', '5'];
 
 function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
@@ -16,12 +19,221 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   return Math.round(R * c);
 }
 
+function getDefaultDestination(lineCode) {
+  if (lineCode === 'L1' || lineCode === 'L3') return 'Hospital Sta. Bárbara';
+  if (lineCode === 'L2') return 'Polígono / Estación';
+  if (lineCode === 'EX') return 'Estación de Autobuses';
+  if (lineCode === 'L4' || lineCode === 'L4E') return 'Mariano Granados';
+  if (lineCode === 'C') return 'Mariano Granados';
+  return 'Mariano Granados';
+}
+
+function resolveDestination(bus, lineCode) {
+  return bus.desArrivalBusStop || bus.desDepartureBusStop || getDefaultDestination(lineCode);
+}
+
+function formatArrivalTime(curMin, mins) {
+  const arrHour = Math.floor((curMin + mins) / 60) % 24;
+  const arrMin = (curMin + mins) % 60;
+  return `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
+}
+
+function findClosestStopIdx(lineSched, lat, lng) {
+  let minD = Infinity;
+  let closestIdx = -1;
+  lineSched.stops.forEach((s, idx) => {
+    const sData = SORIA_ALL_STOPS.find(st => st.name === s.stopName);
+    if (sData) {
+      const d = calculateDistanceMeters(sData.lat, sData.lng, lat, lng);
+      if (d < minD) {
+        minD = d;
+        closestIdx = idx;
+      }
+    }
+  });
+  return closestIdx;
+}
+
+function routeDistanceBetweenStops(lineSched, fromIdx, toIdx) {
+  if (fromIdx === toIdx) return 0;
+  const start = Math.min(fromIdx, toIdx);
+  const end = Math.max(fromIdx, toIdx);
+  let dist = 0;
+  for (let i = start; i < end; i++) {
+    const s1 = SORIA_ALL_STOPS.find(st => st.name === lineSched.stops[i].stopName);
+    const s2 = SORIA_ALL_STOPS.find(st => st.name === lineSched.stops[i + 1].stopName);
+    if (s1 && s2) dist += calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
+  }
+  return dist;
+}
+
+function getHubStopName(hubStopId) {
+  const stop = SORIA_ALL_STOPS.find(s => String(s.id) === String(hubStopId));
+  return stop?.name ?? null;
+}
+
+function estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinutes) {
+  const bLat = parseFloat(bus.latitude ?? bus.lat);
+  const bLng = parseFloat(bus.longitude ?? bus.lng);
+  if (!bLat || !bLng || bLat === 0 || bLng === 0) return null;
+
+  const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+  if (!lineSched?.stops) return null;
+
+  const closestIdx = findClosestStopIdx(lineSched, bLat, bLng);
+  const targetIdx = lineSched.stops.findIndex(s => s.stopName === targetStop.name);
+  if (closestIdx === -1 || targetIdx === -1 || targetIdx < closestIdx) return null;
+
+  if (String(targetStop.id) === String(hubStopId) && hubMinutes != null) {
+    return Math.max(1, hubMinutes);
+  }
+
+  const hubStopName = getHubStopName(hubStopId);
+  const hubIdx = hubStopName ? lineSched.stops.findIndex(s => s.stopName === hubStopName) : -1;
+  const distBusToTarget = routeDistanceBetweenStops(lineSched, closestIdx, targetIdx);
+
+  if (hubMinutes != null && hubIdx !== -1) {
+    if (targetIdx === hubIdx) return Math.max(1, hubMinutes);
+
+    const distBusToHub = routeDistanceBetweenStops(lineSched, closestIdx, hubIdx);
+
+    if (targetIdx > hubIdx && hubIdx >= closestIdx) {
+      const distHubToTarget = routeDistanceBetweenStops(lineSched, hubIdx, targetIdx);
+      return Math.max(1, hubMinutes + Math.round(distHubToTarget / AVG_BUS_SPEED_MPM));
+    }
+
+    if (targetIdx <= hubIdx && targetIdx >= closestIdx && distBusToHub > 0) {
+      return Math.max(1, Math.round(hubMinutes * (distBusToTarget / distBusToHub)));
+    }
+  }
+
+  return Math.max(1, Math.round(distBusToTarget / AVG_BUS_SPEED_MPM));
+}
+
+function buildEtaRecord(bus, lineCode, mins, curMin, etaSource) {
+  return {
+    ...bus,
+    isLive: etaSource !== 'scheduled',
+    desBusLine: lineCode,
+    minutesArrive: mins,
+    arrivalTime: formatArrivalTime(curMin, mins),
+    desArrivalBusStop: resolveDestination(bus, lineCode),
+    etaSource
+  };
+}
+
+async function fetchHubTraffics() {
+  const results = [];
+  const responses = await Promise.allSettled(
+    HUB_STOP_IDS.map(id => fetch(`/api/eta?stopId=${id}`).then(r => r.ok ? r.json() : null))
+  );
+
+  responses.forEach((res, idx) => {
+    const hubStopId = HUB_STOP_IDS[idx];
+    if (res.status !== 'fulfilled' || !res.value?.jsontraffics2) return;
+    try {
+      const traffics = JSON.parse(res.value.jsontraffics2);
+      traffics.forEach(b => {
+        if (!b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')) {
+          results.push({
+            bus: b,
+            hubStopId,
+            hubMinutes: b.minutesArrive ?? b.minutesRemaining ?? null
+          });
+        }
+      });
+    } catch (e) {
+      console.warn('[TUSoria API] Error parsing hub traffics', e);
+    }
+  });
+
+  return results;
+}
+
+function buildEtasFromHubData(hubEntries, targetStop, targetLines) {
+  const now = new Date();
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  const matchingBuses = [];
+
+  hubEntries.forEach(({ bus, hubStopId, hubMinutes }) => {
+    const lineCode = normalizeLineCode(bus.desBusLine, bus.idBusSAE);
+    if (!targetLines.includes(lineCode)) return;
+
+    const mins = estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinutes);
+    if (mins === null) return;
+
+    matchingBuses.push(buildEtaRecord(bus, lineCode, mins, curMin, 'interpolated'));
+  });
+
+  const uniqueBuses = [];
+  const seen = new Set();
+  matchingBuses.forEach(b => {
+    const key = `${b.desBusLine}-${b.idBus || ''}-${b.minutesArrive}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueBuses.push(b);
+    }
+  });
+
+  uniqueBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
+  return uniqueBuses;
+}
+
+function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
+  const now = new Date();
+  const curMin = now.getHours() * 60 + now.getMinutes();
+  const matchingBuses = [];
+
+  liveBuses.forEach(lb => {
+    if (!targetLines.includes(lb.line)) return;
+
+    const bus = {
+      latitude: lb.lat,
+      longitude: lb.lng,
+      idBus: lb.rawId,
+      lat: lb.lat,
+      lng: lb.lng
+    };
+    const mins = estimateEtaFromGpsAndHub(
+      bus,
+      targetStop,
+      lb.line,
+      lb.sourceHubId,
+      lb.hubMinutes ?? lb.minutes
+    );
+    if (mins === null) return;
+
+    matchingBuses.push(buildEtaRecord(bus, lb.line, mins, curMin, 'interpolated'));
+  });
+
+  const uniqueBuses = [];
+  const seen = new Set();
+  matchingBuses.forEach(b => {
+    const key = `${b.desBusLine}-${b.idBus || ''}-${b.minutesArrive}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      uniqueBuses.push(b);
+    }
+  });
+
+  uniqueBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
+  return uniqueBuses;
+}
+
 /**
  * Fetch real-time arrivals for a specific stop ID in Soria
  */
-export async function fetchStopETAs(stopId) {
+export async function fetchStopETAs(stopId, options = {}) {
+  const { liveBuses = null } = options;
   const targetStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
-  const targetLines = targetStop ? targetStop.lines : [];
+  const targetLines = targetStop ? targetStop.lines.filter(l => l !== 'LC') : [];
+
+  if (!targetStop || targetLines.length === 0) {
+    return getFallbackETAs(stopId);
+  }
+
+  const now = new Date();
+  const curMin = now.getHours() * 60 + now.getMinutes();
 
   // 1. Try querying the specific stopId directly
   try {
@@ -30,153 +242,46 @@ export async function fetchStopETAs(stopId) {
     if (response.ok) {
       const data = await response.json();
       const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
-      const filtered = rawTraffics.filter(b => 
+      const filtered = rawTraffics.filter(b =>
         !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
       );
 
       if (filtered.length > 0) {
         const directBuses = [];
         filtered.forEach(b => {
-          const lineCode = b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1');
-          if (targetLines && targetLines.includes(lineCode)) {
-            directBuses.push({
-              ...b,
-              isLive: true,
-              desBusLine: lineCode,
-              minutesArrive: b.minutesArrive != null ? b.minutesArrive : b.minutesRemaining
-            });
+          const lineCode = normalizeLineCode(b.desBusLine, b.idBusSAE);
+          if (targetLines.includes(lineCode)) {
+            const mins = b.minutesArrive ?? b.minutesRemaining;
+            if (mins == null) return;
+            directBuses.push(buildEtaRecord(b, lineCode, mins, curMin, 'direct'));
           }
         });
-        
+
         if (directBuses.length > 0) {
           return directBuses;
         }
       }
     }
   } catch (error) {
-    console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying master hub query...`, error);
+    console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying hub fallback...`, error);
   }
 
-  // 2. MASTER HUB FALLBACK: Query Stop 1 (Mariano Granados) which returns ALL active buses running in Soria
+  // 2. HUB FALLBACK: derive ETAs from live buses across network hubs
+  // Each line has different termini — no single hub covers all lines (e.g. stop 1 is L1/L3 only)
   try {
-    const masterEndpoint = `/api/eta?stopId=1`;
-    const response = await fetch(masterEndpoint);
-    if (response.ok) {
-      const data = await response.json();
-      const rawTraffics = data.jsontraffics2 ? JSON.parse(data.jsontraffics2) : [];
-      const filtered = rawTraffics.filter(b => 
-        !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
-      );
-
-      if (filtered.length > 0) {
-        const matchingBuses = [];
-        const now = new Date();
-        const curMin = now.getHours() * 60 + now.getMinutes();
-
-        filtered.forEach(b => {
-          const lineCode = b.idBusSAE ? b.idBusSAE.trim() : (b.desBusLine ? b.desBusLine.trim().split(' ')[0] : 'L1');
-          
-          if (targetLines && targetLines.includes(lineCode)) {
-            let mins = null;
-            
-            // If the user actually queried Stop 1, we can trust the API's minutesArrive for Stop 1 buses
-            if (String(stopId) === '1' && b.minutesArrive != null) {
-              mins = b.minutesArrive;
-            } else if (targetStop && b.latitude && b.longitude) {
-              const bLat = parseFloat(b.latitude);
-              const bLng = parseFloat(b.longitude);
-              if (bLat !== 0 && bLng !== 0) {
-                let interpolatedMins = null;
-                const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
-                if (lineSched && lineSched.stops) {
-                  let minD = Infinity;
-                  let closestIdx = -1;
-                  lineSched.stops.forEach((s, idx) => {
-                    const sData = SORIA_ALL_STOPS.find(st => st.name === s.stopName);
-                    if (sData) {
-                      const d = calculateDistanceMeters(sData.lat, sData.lng, bLat, bLng);
-                      if (d < minD) {
-                        minD = d;
-                        closestIdx = idx;
-                      }
-                    }
-                  });
-
-                  const targetIdx = lineSched.stops.findIndex(s => s.stopName === targetStop.name);
-                  if (closestIdx !== -1 && targetIdx !== -1 && targetIdx >= closestIdx) {
-                    const closestTimes = lineSched.stops[closestIdx].tripTimes;
-                    const targetTimes = lineSched.stops[targetIdx].tripTimes;
-                    let minTimeDiff = Infinity;
-                    let smallestDiffToNow = Infinity;
-                    
-                    for (let i = 0; i < closestTimes.length; i++) {
-                      if (closestTimes[i] && targetTimes[i]) {
-                        const [h1, m1] = closestTimes[i].split(':').map(Number);
-                        const [h2, m2] = targetTimes[i].split(':').map(Number);
-                        const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
-                        
-                        if (diff >= 0) {
-                          const schedMins = h1 * 60 + m1;
-                          const diffToNow = Math.abs(schedMins - curMin);
-                          
-                          // Match the trip that is closest to the current time
-                          if (diffToNow < smallestDiffToNow) {
-                            smallestDiffToNow = diffToNow;
-                            minTimeDiff = diff;
-                          }
-                        }
-                      }
-                    }
-                    if (minTimeDiff !== Infinity) {
-                      interpolatedMins = minTimeDiff + 1; // +1 min padding
-                    }
-                  }
-                }
-                
-                if (interpolatedMins !== null) {
-                  mins = Math.max(1, interpolatedMins);
-                }
-              }
-            }
-
-            // If we have no way to calculate an ETA for this stop, don't show a fake live one
-            if (mins === null) return;
-
-            const arrHour = Math.floor((curMin + mins) / 60) % 24;
-            const arrMin = (curMin + mins) % 60;
-            const timeStr = `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
-
-            matchingBuses.push({
-              ...b,
-              isLive: true,
-              desBusLine: lineCode,
-              minutesArrive: mins,
-              arrivalTime: timeStr,
-              desArrivalBusStop: lineCode === 'L1' || lineCode === 'L3' ? 'Hospital Sta. Bárbara' : lineCode === 'L2' ? 'Polígono / Estación' : 'Mariano Granados'
-            });
-          }
-        });
-
-        if (matchingBuses.length > 0) {
-          const uniqueBuses = [];
-          const seen = new Set();
-          matchingBuses.forEach(b => {
-            const key = `${b.desBusLine}-${b.minutesArrive}`;
-            if (!seen.has(key)) {
-              seen.add(key);
-              uniqueBuses.push(b);
-            }
-          });
-          uniqueBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
-          return uniqueBuses;
-        }
-      }
+    if (liveBuses && liveBuses.length > 0) {
+      const fromLive = buildEtasFromLiveBuses(liveBuses, targetStop, targetLines);
+      if (fromLive.length > 0) return fromLive;
     }
+
+    const hubEntries = await fetchHubTraffics();
+    const fromHubs = buildEtasFromHubData(hubEntries, targetStop, targetLines);
+    if (fromHubs.length > 0) return fromHubs;
   } catch (error) {
-    console.warn(`[TUSoria API] Master hub query failed:`, error);
+    console.warn('[TUSoria API] Hub fallback failed:', error);
   }
 
-  // 3. Fallback to stop-specific schedule matrix if offline / night time
+  // 3. Fallback to stop-specific schedule matrix if offline / outside service hours
   return getFallbackETAs(stopId);
 }
 
@@ -185,7 +290,7 @@ export async function fetchStopETAs(stopId) {
  */
 export async function fetchLineGeometry(lineId) {
   const endpoint = `${BASE_URL}/detalle-linea?p_p_id=adoLinea_AdoLineaFechaPortlet_INSTANCE_sKbepqk8mA1e&p_p_lifecycle=2&p_p_state=normal&p_p_mode=view&p_p_cacheability=cacheLevelPage&_adoLinea_AdoLineaFechaPortlet_INSTANCE_sKbepqk8mA1e_cmd=getLineasMap`;
-  
+
   const params = new URLSearchParams({
     "_adoLinea_AdoLineaFechaPortlet_INSTANCE_sKbepqk8mA1e_idBusLine": String(lineId)
   });
@@ -220,15 +325,15 @@ export async function fetchServiceAlerts() {
 }
 
 export function isLineActiveToday(lineCode, date = new Date()) {
-  const day = date.getDay(); // 0 = Sunday, 6 = Saturday, 1..5 = Mon..Fri
+  const day = date.getDay();
   if (lineCode === 'C') {
-    return day === 0; // Line C ONLY runs on Sundays & holidays
+    return day === 0;
   }
   if (['L1', 'L2', 'L3', 'L4'].includes(lineCode)) {
-    return day !== 0; // Mon-Sat
+    return day !== 0;
   }
   if (lineCode === 'L4E' || lineCode === 'EX') {
-    return day >= 1 && day <= 5; // Mon-Fri
+    return day >= 1 && day <= 5;
   }
   return true;
 }
@@ -245,7 +350,6 @@ export function getFallbackETAs(stopId) {
     return [];
   }
 
-  // Find stop in SORIA_ALL_STOPS
   const stopObj = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
   if (!stopObj || !stopObj.lines || stopObj.lines.length === 0) {
     return [];
@@ -255,13 +359,12 @@ export function getFallbackETAs(stopId) {
 
   stopObj.lines.forEach((lineCode, lIdx) => {
     if (lineCode === 'LC') return;
-    if (!isLineActiveToday(lineCode, now)) return; // Skip lines not active today!
+    if (!isLineActiveToday(lineCode, now)) return;
 
     const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
     if (!lineSched || !lineSched.stops) return;
 
     const matchStop = findMatchingStopInSchedule(lineSched.stops, stopObj);
-
     if (!matchStop || !matchStop.tripTimes) return;
 
     let bestNext = null;
@@ -291,8 +394,9 @@ export function getFallbackETAs(stopId) {
         minutesArrive: minDiff,
         arrivalTime: timeStr,
         isLive: false,
+        etaSource: 'scheduled',
         desDepartureBusStop: stopObj.name,
-        desArrivalBusStop: lineCode === 'L1' || lineCode === 'L3' ? 'Hospital Sta. Bárbara' : lineCode === 'L2' ? 'Polígono / Estación' : 'Mariano Granados'
+        desArrivalBusStop: getDefaultDestination(lineCode)
       });
     }
   });
@@ -301,13 +405,10 @@ export function getFallbackETAs(stopId) {
   return results;
 }
 
-
-
 function normalizeLineCode(rawLine, rawSae) {
   const sae = (rawSae || '').trim().toUpperCase();
   const line = (rawLine || '').trim().toUpperCase();
 
-  // 1. Strict SAE code match (Exact API values)
   if (sae === 'L1' || sae === '001' || sae === '1') return 'L1';
   if (sae === 'L2' || sae === '002' || sae === '2') return 'L2';
   if (sae === 'L3' || sae === '003' || sae === '3') return 'L3';
@@ -318,7 +419,6 @@ function normalizeLineCode(rawLine, rawSae) {
 
   if (sae.startsWith('L')) return sae;
 
-  // 2. Descriptive text fallback (only if SAE is missing/unclear)
   if (line.includes('L3') || line.includes('L-3')) return 'L3';
   if (line.includes('L2') || line.includes('L-2') || line.includes('POLÍGONO') || line.includes('POLIGONO') || line.includes('BARRIADA')) return 'L2';
   if (line.includes('L4E') || line.includes('BARRIO DE LAS CASAS')) return 'L4E';
@@ -333,64 +433,66 @@ function normalizeLineCode(rawLine, rawSae) {
 }
 
 export async function getAllLiveBuses() {
-  // Comprehensive hub & terminal stop IDs covering all ends of the network:
-  // 1: Mariano Granados, 89: El Salvador, 3: Estación, 75: Polígono, 85: Hospital Sta Bárbara, 62: Los Pajaritos, 5: San Pedro
-  const hubStopIds = ['1', '89', '3', '75', '85', '62', '5'];
   const busesList = [];
 
   try {
     const responses = await Promise.allSettled(
-      hubStopIds.map(id => fetch(`/api/eta?stopId=${id}`).then(r => r.ok ? r.json() : null))
+      HUB_STOP_IDS.map(id => fetch(`/api/eta?stopId=${id}`).then(r => r.ok ? r.json() : null))
     );
 
-    responses.forEach(res => {
-      if (res.status === 'fulfilled' && res.value && res.value.jsontraffics2) {
-        try {
-          const traffics = JSON.parse(res.value.jsontraffics2);
-          traffics.forEach(b => {
-            if (
-              (!b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')) &&
-              b.latitude && b.longitude && parseFloat(b.latitude) !== 0 && parseFloat(b.longitude) !== 0
-            ) {
-              const lineCode = normalizeLineCode(b.desBusLine, b.idBusSAE);
-              const lat = parseFloat(b.latitude);
-              const lng = parseFloat(b.longitude);
-              const rawId = (b.idBus && String(b.idBus).trim() !== '0') ? String(b.idBus).trim() : null;
+    responses.forEach((res, hubIdx) => {
+      const sourceHubId = HUB_STOP_IDS[hubIdx];
+      if (res.status !== 'fulfilled' || !res.value?.jsontraffics2) return;
 
-              // Check if we already have this vehicle in busesList (by explicit ID or tight spatial proximity <= 50m)
-              let existing = busesList.find(item => {
-                if (rawId && item.rawId === rawId) return true;
-                if (item.line === lineCode) {
-                  const dLat = item.lat - lat;
-                  const dLng = item.lng - lng;
-                  return (dLat * dLat + dLng * dLng) < 0.000001; // ~50m radius
-                }
-                return false;
-              });
+      try {
+        const traffics = JSON.parse(res.value.jsontraffics2);
+        traffics.forEach(b => {
+          if (
+            (!b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')) &&
+            b.latitude && b.longitude && parseFloat(b.latitude) !== 0 && parseFloat(b.longitude) !== 0
+          ) {
+            const lineCode = normalizeLineCode(b.desBusLine, b.idBusSAE);
+            const lat = parseFloat(b.latitude);
+            const lng = parseFloat(b.longitude);
+            const rawId = (b.idBus && String(b.idBus).trim() !== '0') ? String(b.idBus).trim() : null;
+            const hubMinutes = b.minutesArrive ?? b.minutesRemaining ?? null;
 
-              if (existing) {
-                // Update coordinates of existing detected bus
-                existing.lat = lat;
-                existing.lng = lng;
-                if (b.minutesArrive != null) existing.minutes = b.minutesArrive;
-              } else {
-                // Create new bus entry with unique key
-                const vehicleKey = rawId ? `BUS-${rawId}` : `BUS-${lineCode}-${lat.toFixed(3)}-${lng.toFixed(3)}`;
-                busesList.push({
-                  id: vehicleKey,
-                  rawId: rawId,
-                  line: lineCode,
-                  lat: lat,
-                  lng: lng,
-                  minutes: b.minutesArrive,
-                  isLive: true
-                });
+            let existing = busesList.find(item => {
+              if (rawId && item.rawId === rawId) return true;
+              if (item.line === lineCode) {
+                const dLat = item.lat - lat;
+                const dLng = item.lng - lng;
+                return (dLat * dLat + dLng * dLng) < 0.000001;
               }
+              return false;
+            });
+
+            if (existing) {
+              existing.lat = lat;
+              existing.lng = lng;
+              if (hubMinutes != null) {
+                existing.hubMinutes = hubMinutes;
+                existing.minutes = hubMinutes;
+              }
+              existing.sourceHubId = sourceHubId;
+            } else {
+              const vehicleKey = rawId ? `BUS-${rawId}` : `BUS-${lineCode}-${lat.toFixed(3)}-${lng.toFixed(3)}`;
+              busesList.push({
+                id: vehicleKey,
+                rawId,
+                line: lineCode,
+                lat,
+                lng,
+                minutes: hubMinutes,
+                hubMinutes,
+                sourceHubId,
+                isLive: true
+              });
             }
-          });
-        } catch (e) {
-          console.warn('[TUSoria API] Error parsing traffics payload', e);
-        }
+          }
+        });
+      } catch (e) {
+        console.warn('[TUSoria API] Error parsing traffics payload', e);
       }
     });
   } catch (err) {

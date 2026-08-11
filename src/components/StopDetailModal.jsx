@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { fetchStopETAs, getFallbackETAs } from '../services/avanzaApi';
+import { useLiveData } from '../context/LiveDataContext';
 import { SORIA_LINES } from '../data/soriaLines';
 import { CAMARETAS_TIMETABLE } from '../data/camaretasSchedule';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 
 export default function StopDetailModal({ stop, onClose }) {
-  const isLcStop = stop.lines.includes('LC');
+  const isLcStop = stop.lines.includes('LC') && !stop.lines.some(l => l !== 'LC');
+  const { liveBuses } = useLiveData();
+  const liveBusesRef = React.useRef(liveBuses);
+  liveBusesRef.current = liveBuses;
   const [activeTab, setActiveTab] = useState(isLcStop ? 'schedule' : 'realtime');
   const [etas, setEtas] = useState(() => isLcStop ? [] : getFallbackETAs(stop.id));
   const [isRefreshing, setIsRefreshing] = useState(!isLcStop);
@@ -60,7 +64,7 @@ export default function StopDetailModal({ stop, onClose }) {
     let cancelled = false;
     async function load() {
       setIsRefreshing(true);
-      const data = await fetchStopETAs(stop.id);
+      const data = await fetchStopETAs(stop.id, { liveBuses: liveBusesRef.current });
       if (!cancelled) {
         setEtas(data);
         setIsRefreshing(false);
@@ -69,6 +73,65 @@ export default function StopDetailModal({ stop, onClose }) {
     load();
     return () => { cancelled = true; };
   }, [stop, isLcStop]);
+
+  function getEtaBadge(eta) {
+    if (!eta.isLive || eta.etaSource === 'scheduled') {
+      return (
+        <span style={{
+          display: 'inline-block',
+          background: 'var(--bg-elevated)',
+          color: 'var(--text-muted)',
+          border: '1px solid var(--border-subtle)',
+          padding: '2px 6px',
+          borderRadius: 4,
+          fontSize: 10
+        }}>
+          Programado
+        </span>
+      );
+    }
+    if (eta.etaSource === 'interpolated') {
+      return (
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          background: 'rgba(245, 158, 11, 0.15)',
+          color: '#f59e0b',
+          border: '1px solid rgba(245, 158, 11, 0.35)',
+          padding: '2px 6px',
+          borderRadius: 4,
+          fontSize: 10,
+          fontWeight: 800
+        }}>
+          Estimado
+        </span>
+      );
+    }
+    return (
+      <span style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        background: 'rgba(16, 185, 129, 0.18)',
+        color: '#10b981',
+        border: '1px solid rgba(16, 185, 129, 0.4)',
+        padding: '2px 6px',
+        borderRadius: 4,
+        fontSize: 10,
+        fontWeight: 800
+      }}>
+        <span style={{
+          width: 6,
+          height: 6,
+          borderRadius: '50%',
+          background: '#10b981',
+          boxShadow: '0 0 6px #10b981'
+        }}></span>
+        En Vivo
+      </span>
+    );
+  }
 
   function getLineColor(lineCode) {
     const line = SORIA_LINES.find(l => l.code === lineCode);
@@ -144,9 +207,9 @@ export default function StopDetailModal({ stop, onClose }) {
 
               {etas.length === 0 ? (
                 <div style={{ padding: '40px 0', textAlign: 'center' }}>
-                  <p style={{ fontSize: 32, marginBottom: 8 }}>🌙</p>
-                  <p style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-secondary)' }}>Sin autobuses próximos</p>
-                  <p className="text-xs text-muted" style={{ marginTop: 4 }}>Servicio nocturno cerrado o sin expediciones en tiempo real.</p>
+                  <p style={{ fontSize: 32, marginBottom: 8 }}>🕐</p>
+                  <p style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-secondary)' }}>Sin expediciones programadas</p>
+                  <p className="text-xs text-muted" style={{ marginTop: 4 }}>Fuera del horario de servicio habitual o sin datos en tiempo real.</p>
                 </div>
               ) : (
                 etas.map((eta, idx) => (
@@ -160,41 +223,7 @@ export default function StopDetailModal({ stop, onClose }) {
                           <p style={{ fontWeight: 600, fontSize: 13, margin: 0 }}>
                             {eta.desArrivalBusStop || 'Destino'}
                           </p>
-                          {eta.isLive ? (
-                            <span style={{ 
-                              display: 'inline-flex', 
-                              alignItems: 'center', 
-                              gap: 4, 
-                              background: 'rgba(16, 185, 129, 0.18)', 
-                              color: '#10b981', 
-                              border: '1px solid rgba(16, 185, 129, 0.4)',
-                              padding: '2px 6px', 
-                              borderRadius: 4, 
-                              fontSize: 10, 
-                              fontWeight: 800 
-                            }}>
-                              <span style={{ 
-                                width: 6, 
-                                height: 6, 
-                                borderRadius: '50%', 
-                                background: '#10b981', 
-                                boxShadow: '0 0 6px #10b981'
-                              }}></span>
-                              📡 En Vivo
-                            </span>
-                          ) : (
-                            <span style={{ 
-                              display: 'inline-block', 
-                              background: 'var(--bg-elevated)', 
-                              color: 'var(--text-muted)', 
-                              border: '1px solid var(--border-subtle)',
-                              padding: '2px 6px', 
-                              borderRadius: 4, 
-                              fontSize: 10 
-                            }}>
-                              📅 Programado
-                            </span>
-                          )}
+                          {getEtaBadge(eta)}
                         </div>
                         <p className="text-xxs text-muted" style={{ marginTop: 2 }}>Bus #{eta.idBus || '—'}</p>
                       </div>

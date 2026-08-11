@@ -6,6 +6,7 @@ import LinesView from './components/LinesView';
 import AlertsView from './components/AlertsView';
 import StopDetailModal from './components/StopDetailModal';
 import RouteResultsDrawer from './components/RouteResultsDrawer';
+import { LiveDataProvider } from './context/LiveDataContext';
 import { SERVICE_ALERTS } from './data/provisionalStops';
 
 export default function App() {
@@ -61,6 +62,7 @@ export default function App() {
   };
 
   return (
+    <LiveDataProvider>
     <div className="app-shell">
       <SearchBar
         userLocation={userLocation}
@@ -117,5 +119,6 @@ export default function App() {
         alertsCount={SERVICE_ALERTS.length}
       />
     </div>
+    </LiveDataProvider>
   );
 }
