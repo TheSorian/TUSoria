@@ -242,7 +242,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     fetchBuses();
     const fetchInterval = setInterval(() => {
       if (mounted) fetchBuses();
-    }, 8000);
+    }, 4000);
 
     const timerInterval = setInterval(() => {
       if (mounted) {
@@ -257,28 +257,21 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     };
   }, []);
 
-  // Continuous smooth movement interpolation loop (simulates continuous bus movement between GPS polls)
+  // Smooth movement interpolation loop (slides marker smoothly when GPS coordinates update)
   useEffect(() => {
     const animationInterval = setInterval(() => {
       busMarkersMapRef.current.forEach((item) => {
-        const { marker, currentPos, targetPos, isLive } = item;
+        const { marker, currentPos, targetPos } = item;
         
         let dLat = targetPos.lat - currentPos.lat;
         let dLng = targetPos.lng - currentPos.lng;
 
         const distSq = dLat * dLat + dLng * dLng;
 
-        if (distSq > 0.000000001) {
-          // Smoothly interpolate towards target
-          currentPos.lat += dLat * 0.12;
-          currentPos.lng += dLng * 0.12;
-          marker.setLatLng([currentPos.lat, currentPos.lng]);
-        } else if (!isLive) {
-          // For simulated buses, gently advance along small drift path
-          currentPos.lat += Math.sin(Date.now() / 4000) * 0.000005;
-          currentPos.lng += Math.cos(Date.now() / 4000) * 0.000005;
-          targetPos.lat = currentPos.lat;
-          targetPos.lng = currentPos.lng;
+        if (distSq > 0.0000000001) {
+          // Smoothly interpolate towards new target GPS coordinate
+          currentPos.lat += dLat * 0.15;
+          currentPos.lng += dLng * 0.15;
           marker.setLatLng([currentPos.lat, currentPos.lng]);
         }
       });
@@ -345,8 +338,8 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
               width: 6px;
               height: 6px;
               border-radius: 50%;
-              background: ${b.isLive ? '#34d399' : '#fbbf24'};
-              box-shadow: 0 0 6px ${b.isLive ? '#34d399' : '#fbbf24'};
+              background: #34d399;
+              box-shadow: 0 0 6px #34d399;
               display: inline-block;
             "></span>
           </div>
@@ -359,15 +352,14 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
         // Update target position for existing bus
         const existing = currentMap.get(b.id);
         existing.targetPos = { lat: b.lat, lng: b.lng };
-        existing.isLive = b.isLive;
+        existing.isLive = true;
       } else {
         // Create new marker
         const marker = L.marker([b.lat, b.lng], { icon: bIcon, zIndexOffset: 1500 }).addTo(busesLayerRef.current);
         marker.bindPopup(`
-          <div style="color:#fff; padding:6px; font-size:12px;">
-            <strong>Bus Línea ${b.line}</strong><br/>
-            ${b.isLive ? '🟢 Posición GPS en Vivo' : '🟡 Horario Estimado'}<br/>
-            ${b.minutes ? `Llegada aprox: ${b.minutes} min` : ''}
+          <div style="color:#fff; padding:6px; font-size:12px; line-height:1.4;">
+            <strong style="color: #60a5fa; font-size:13px;">🚌 Bus Línea ${b.line}</strong><br/>
+            <span>🟢 Posición GPS en tiempo real</span>
           </div>
         `);
 
@@ -376,7 +368,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
           currentPos: { lat: b.lat, lng: b.lng },
           targetPos: { lat: b.lat, lng: b.lng },
           line: b.line,
-          isLive: b.isLive
+          isLive: true
         });
       }
     });

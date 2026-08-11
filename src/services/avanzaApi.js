@@ -307,15 +307,26 @@ function normalizeLineCode(rawLine, rawSae) {
   const sae = (rawSae || '').trim().toUpperCase();
   const line = (rawLine || '').trim().toUpperCase();
 
-  if (sae === 'L1' || sae === '001' || line.includes('PAJARITOS') || line.includes('L1')) return 'L1';
-  if (sae === 'L2' || sae === '002' || line.includes('POLÍGONO') || line.includes('POLIGONO') || line.includes('BARRIADA') || line.includes('L2')) return 'L2';
-  if (sae === 'L3' || sae === '003' || line.includes('ROYALES') || line.includes('L3')) return 'L3';
-  if (sae === 'L4E' || sae === '012' || line.includes('CASAS') || line.includes('L4E')) return 'L4E';
-  if (sae === 'L4' || sae === '004' || line.includes('ESTACIÓN') || line.includes('ESTACION') || line.includes('L4')) return 'L4';
-  if (sae === 'C' || sae === '008' || line.includes('CIRCULAR')) return 'C';
-  if (sae === 'EX' || sae === '009' || line.includes('EXPRÉS') || line.includes('EXPRES')) return 'EX';
+  // 1. Strict SAE code match (Exact API values)
+  if (sae === 'L1' || sae === '001' || sae === '1') return 'L1';
+  if (sae === 'L2' || sae === '002' || sae === '2') return 'L2';
+  if (sae === 'L3' || sae === '003' || sae === '3') return 'L3';
+  if (sae === 'L4E' || sae === '012') return 'L4E';
+  if (sae === 'L4' || sae === '004' || sae === '4') return 'L4';
+  if (sae === 'C' || sae === '008') return 'C';
+  if (sae === 'EX' || sae === '009') return 'EX';
 
   if (sae.startsWith('L')) return sae;
+
+  // 2. Descriptive text fallback (only if SAE is missing/unclear)
+  if (line.includes('L3') || line.includes('L-3')) return 'L3';
+  if (line.includes('L2') || line.includes('L-2') || line.includes('POLÍGONO') || line.includes('POLIGONO') || line.includes('BARRIADA')) return 'L2';
+  if (line.includes('L4E') || line.includes('BARRIO DE LAS CASAS')) return 'L4E';
+  if (line.includes('L4') || line.includes('L-4')) return 'L4';
+  if (line.includes('CIRCULAR')) return 'C';
+  if (line.includes('EXPRÉS') || line.includes('EXPRES')) return 'EX';
+  if (line.includes('L1') || line.includes('L-1')) return 'L1';
+
   if (/^\d+$/.test(sae)) return `L${parseInt(sae, 10)}`;
 
   return 'L1';
@@ -362,44 +373,5 @@ export async function getAllLiveBuses() {
     console.warn('[TUSoria API] Multi-hub live buses fetch failed', err);
   }
 
-  const liveBuses = Array.from(busMap.values());
-  const activeLinesInLive = new Set(liveBuses.map(b => b.line));
-
-  // FALLBACK SIMULATION: If an active operating line has no real-time GPS returned, generate fallback positions
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentMin = currentHour * 60 + now.getMinutes();
-
-  if (currentHour >= 7 && currentHour < 22) {
-    const activeLinesToday = ['L1', 'L2', 'L3', 'L4'].filter(lCode => isLineActiveToday(lCode, now));
-
-    // Known center key positions for simulated fallback buses
-    const fallbackCoords = {
-      'L1': { lat: 41.7588, lng: -2.4721 }, // Hospital Sta Bárbara
-      'L2': { lat: 41.7650, lng: -2.4690 }, // El Salvador / Centro
-      'L3': { lat: 41.7638, lng: -2.4687 }, // Mariano Granados
-      'L4': { lat: 41.7655, lng: -2.4762 }, // Estación Autobuses
-      'C':  { lat: 41.7638, lng: -2.4687 }
-    };
-
-    activeLinesToday.forEach((lCode, idx) => {
-      if (!activeLinesInLive.has(lCode)) {
-        const coords = fallbackCoords[lCode] || { lat: 41.7638 + idx * 0.002, lng: -2.4687 + idx * 0.002 };
-        // Create 2 simulated running buses spaced along route schedule
-        const offsetLat = (Math.sin(currentMin / 3 + idx) * 0.003);
-        const offsetLng = (Math.cos(currentMin / 3 + idx) * 0.003);
-
-        liveBuses.push({
-          id: `SIM-${lCode}-1`,
-          line: lCode,
-          lat: parseFloat((coords.lat + offsetLat).toFixed(6)),
-          lng: parseFloat((coords.lng + offsetLng).toFixed(6)),
-          minutes: 5,
-          isLive: false
-        });
-      }
-    });
-  }
-
-  return liveBuses;
+  return Array.from(busMap.values());
 }

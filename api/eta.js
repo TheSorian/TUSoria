@@ -1,8 +1,8 @@
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
-// In-memory cache for ultra-fast (1ms) responses
+// In-memory cache for fast responses (3 seconds TTL)
 const memoryCache = new Map();
-const CACHE_TTL_MS = 30 * 1000; // 30 seconds TTL
+const CACHE_TTL_MS = 3 * 1000; // 3 seconds TTL
 
 export default async function handler(req, res) {
   const { stopId } = req.query;
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
   // Return from in-memory cache if fresh
   if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=30, stale-while-revalidate=120');
+    res.setHeader('Cache-Control', 'public, max-age=3, s-maxage=3, stale-while-revalidate=10');
     res.setHeader('X-Cache-Status', 'HIT-MEMORY');
     return res.status(200).json(cached.data);
   }
@@ -54,7 +54,7 @@ export default async function handler(req, res) {
     memoryCache.set(stopId, { timestamp: now, data });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=30, stale-while-revalidate=120');
+    res.setHeader('Cache-Control', 'public, max-age=3, s-maxage=3, stale-while-revalidate=10');
     res.setHeader('X-Cache-Status', 'MISS-FETCHED');
     return res.status(200).json(data);
   } catch (error) {
