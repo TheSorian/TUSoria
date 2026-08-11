@@ -325,7 +325,7 @@ function normalizeLineCode(rawLine, rawSae) {
   if (line.includes('L4') || line.includes('L-4')) return 'L4';
   if (line.includes('CIRCULAR')) return 'C';
   if (line.includes('EXPRÉS') || line.includes('EXPRES')) return 'EX';
-  if (line.includes('L1') || line.includes('L-1')) return 'L1';
+  if (line.includes('L1') || line.includes('L-1') || line.includes('PAJARITOS')) return 'L1';
 
   if (/^\d+$/.test(sae)) return `L${parseInt(sae, 10)}`;
 
@@ -333,7 +333,9 @@ function normalizeLineCode(rawLine, rawSae) {
 }
 
 export async function getAllLiveBuses() {
-  const hubStopIds = ['1', '89', '3', '75']; // Mariano Granados, El Salvador, Estación Autobuses, Polígono
+  // Comprehensive hub & terminal stop IDs covering all ends of the network:
+  // 1: Mariano Granados, 89: El Salvador, 3: Estación, 75: Polígono, 85: Hospital Sta Bárbara, 62: Los Pajaritos, 5: San Pedro
+  const hubStopIds = ['1', '89', '3', '75', '85', '62', '5'];
   const busesList = [];
 
   try {
