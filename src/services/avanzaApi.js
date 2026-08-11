@@ -373,36 +373,5 @@ export async function getAllLiveBuses() {
     console.warn('[TUSoria API] Multi-hub live buses fetch failed', err);
   }
 
-  const liveBuses = Array.from(busMap.values());
-  const activeLinesInLive = new Set(liveBuses.map(b => b.line));
-
-  const now = new Date();
-  const currentHour = now.getHours();
-
-  if (currentHour >= 7 && currentHour < 22) {
-    const activeLinesToday = ['L1', 'L2', 'L3', 'L4'].filter(lCode => isLineActiveToday(lCode, now));
-
-    const routeStartCoords = {
-      'L1': { lat: 41.7638, lng: -2.4687 }, // Mariano Granados
-      'L2': { lat: 41.7650, lng: -2.4690 }, // El Salvador
-      'L3': { lat: 41.7638, lng: -2.4687 }, // Mariano Granados
-      'L4': { lat: 41.7650, lng: -2.4690 }, // El Salvador
-      'C':  { lat: 41.7650, lng: -2.4690 }
-    };
-
-    activeLinesToday.forEach((lCode) => {
-      if (!activeLinesInLive.has(lCode)) {
-        const coords = routeStartCoords[lCode] || { lat: 41.7638, lng: -2.4687 };
-        liveBuses.push({
-          id: `SIM-${lCode}-1`,
-          line: lCode,
-          lat: coords.lat,
-          lng: coords.lng,
-          isLive: false
-        });
-      }
-    });
-  }
-
-  return liveBuses;
+  return Array.from(busMap.values());
 }

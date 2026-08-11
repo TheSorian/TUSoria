@@ -199,51 +199,6 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
 }
 
 
-function getFlattenedPolyline(lineCode) {
-  const polys = REAL_LINE_POLYLINES[lineCode];
-  if (!polys || polys.length === 0) return [];
-  const result = [];
-  polys.forEach(sub => {
-    if (sub && sub.length > 0) {
-      sub.forEach(pt => result.push([parseFloat(pt[0]), parseFloat(pt[1])]));
-    }
-  });
-  return result;
-}
-
-function advanceAlongPolyline(lineCode, currentLat, currentLng, stepDistance = 0.00008) {
-  const points = getFlattenedPolyline(lineCode);
-  if (points.length < 2) return { lat: currentLat, lng: currentLng };
-
-  let minD = Infinity;
-  let closestIdx = 0;
-  for (let i = 0; i < points.length; i++) {
-    const d = (points[i][0] - currentLat) ** 2 + (points[i][1] - currentLng) ** 2;
-    if (d < minD) {
-      minD = d;
-      closestIdx = i;
-    }
-  }
-
-  const nextIdx = (closestIdx + 1) % points.length;
-  const targetPoint = points[nextIdx];
-
-  const dLat = targetPoint[0] - currentLat;
-  const dLng = targetPoint[1] - currentLng;
-  const dist = Math.sqrt(dLat * dLat + dLng * dLng);
-
-  if (dist < 0.00003) {
-    const wayNextIdx = (nextIdx + 1) % points.length;
-    return { lat: points[wayNextIdx][0], lng: points[wayNextIdx][1] };
-  }
-
-  const nextLat = currentLat + (dLat / dist) * Math.min(dist, stepDistance);
-  const nextLng = currentLng + (dLng / dist) * Math.min(dist, stepDistance);
-
-  return { lat: nextLat, lng: nextLng };
-}
-
-
 export default function MapView({ onSelectStop, activeRoute, userLocation, selectedTarget, selectedStop }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
@@ -303,30 +258,21 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
   }, []);
 
   // Smooth movement animation loop:
-  // - Real GPS buses: slides smoothly toward new GPS coordinates
-  // - Simulated buses: advances strictly along the line polyline (traza real)
+  // Glides marker smoothly at realistic bus speed (~20 km/h) towards newly received GPS coordinate
   useEffect(() => {
     const animationInterval = setInterval(() => {
       busMarkersMapRef.current.forEach((item) => {
-        const { marker, currentPos, targetPos, line, isLive } = item;
+        const { marker, currentPos, targetPos } = item;
         
-        if (isLive) {
-          let dLat = targetPos.lat - currentPos.lat;
-          let dLng = targetPos.lng - currentPos.lng;
-          const distSq = dLat * dLat + dLng * dLng;
+        let dLat = targetPos.lat - currentPos.lat;
+        let dLng = targetPos.lng - currentPos.lng;
+        const dist = Math.sqrt(dLat * dLat + dLng * dLng);
 
-          if (distSq > 0.0000000001) {
-            currentPos.lat += dLat * 0.15;
-            currentPos.lng += dLng * 0.15;
-            marker.setLatLng([currentPos.lat, currentPos.lng]);
-          }
-        } else {
-          // Advance simulated bus along exact polyline traza
-          const nextPos = advanceAlongPolyline(line, currentPos.lat, currentPos.lng, 0.00006);
-          currentPos.lat = nextPos.lat;
-          currentPos.lng = nextPos.lng;
-          targetPos.lat = nextPos.lat;
-          targetPos.lng = nextPos.lng;
+        if (dist > 0.000002) {
+          // Constant realistic bus gliding speed
+          const step = Math.min(dist, 0.000004);
+          currentPos.lat += (dLat / dist) * step;
+          currentPos.lng += (dLng / dist) * step;
           marker.setLatLng([currentPos.lat, currentPos.lng]);
         }
       });
@@ -393,8 +339,8 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
               width: 6px;
               height: 6px;
               border-radius: 50%;
-              background: ${b.isLive ? '#34d399' : '#fbbf24'};
-              box-shadow: 0 0 6px ${b.isLive ? '#34d399' : '#fbbf24'};
+              background: #34d399;
+              box-shadow: 0 0 6px #34d399;
               display: inline-block;
             "></span>
           </div>
@@ -407,14 +353,13 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
         // Update target position for existing bus
         const existing = currentMap.get(b.id);
         existing.targetPos = { lat: b.lat, lng: b.lng };
-        existing.isLive = b.isLive;
       } else {
         // Create new marker
         const marker = L.marker([b.lat, b.lng], { icon: bIcon, zIndexOffset: 1500 }).addTo(busesLayerRef.current);
         marker.bindPopup(`
           <div style="color:#fff; padding:6px; font-size:12px; line-height:1.4;">
             <strong style="color: #60a5fa; font-size:13px;">🚌 Bus Línea ${b.line}</strong><br/>
-            <span>${b.isLive ? '🟢 Posición GPS en tiempo real' : '🟡 Simulación continua sobre trazado real'}</span>
+            <span>🟢 Posición GPS en tiempo real</span>
           </div>
         `);
 
@@ -422,8 +367,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
           marker,
           currentPos: { lat: b.lat, lng: b.lng },
           targetPos: { lat: b.lat, lng: b.lng },
-          line: b.line,
-          isLive: b.isLive
+          line: b.line
         });
       }
     });
