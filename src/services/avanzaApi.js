@@ -1,7 +1,7 @@
 import { SERVICE_ALERTS } from '../data/provisionalStops';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
-import { findMatchingStopInSchedule } from '../utils/stopMatcher';
+import { findMatchingStopInSchedule, areStopsMatching } from '../utils/stopMatcher';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 const AVG_BUS_SPEED_MPM = 250;
@@ -38,11 +38,20 @@ function formatArrivalTime(curMin, mins) {
   return `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
 }
 
+function scheduleStopIndex(lineSched, soriaStop) {
+  const match = findMatchingStopInSchedule(lineSched.stops, soriaStop);
+  return match ? lineSched.stops.indexOf(match) : -1;
+}
+
+function findSoriaStopForScheduleStop(schedStop) {
+  return SORIA_ALL_STOPS.find(st => areStopsMatching(st.name, schedStop.name));
+}
+
 function findClosestStopIdx(lineSched, lat, lng) {
   let minD = Infinity;
   let closestIdx = -1;
   lineSched.stops.forEach((s, idx) => {
-    const sData = SORIA_ALL_STOPS.find(st => st.name === s.stopName);
+    const sData = findSoriaStopForScheduleStop(s);
     if (sData) {
       const d = calculateDistanceMeters(sData.lat, sData.lng, lat, lng);
       if (d < minD) {
@@ -60,16 +69,11 @@ function routeDistanceBetweenStops(lineSched, fromIdx, toIdx) {
   const end = Math.max(fromIdx, toIdx);
   let dist = 0;
   for (let i = start; i < end; i++) {
-    const s1 = SORIA_ALL_STOPS.find(st => st.name === lineSched.stops[i].stopName);
-    const s2 = SORIA_ALL_STOPS.find(st => st.name === lineSched.stops[i + 1].stopName);
+    const s1 = findSoriaStopForScheduleStop(lineSched.stops[i]);
+    const s2 = findSoriaStopForScheduleStop(lineSched.stops[i + 1]);
     if (s1 && s2) dist += calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
   }
   return dist;
-}
-
-function getHubStopName(hubStopId) {
-  const stop = SORIA_ALL_STOPS.find(s => String(s.id) === String(hubStopId));
-  return stop?.name ?? null;
 }
 
 function estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinutes) {
@@ -81,15 +85,18 @@ function estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinut
   if (!lineSched?.stops) return null;
 
   const closestIdx = findClosestStopIdx(lineSched, bLat, bLng);
-  const targetIdx = lineSched.stops.findIndex(s => s.stopName === targetStop.name);
+  const targetIdx = scheduleStopIndex(lineSched, targetStop);
+  // #region agent log
+  if (String(targetStop.id) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:estimateEtaFromGpsAndHub',message:'stop21 indices',data:{lineCode,closestIdx,targetIdx,hubStopId,hubMinutes,bLat,bLng},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
+  // #endregion
   if (closestIdx === -1 || targetIdx === -1 || targetIdx < closestIdx) return null;
 
   if (String(targetStop.id) === String(hubStopId) && hubMinutes != null) {
     return Math.max(1, hubMinutes);
   }
 
-  const hubStopName = getHubStopName(hubStopId);
-  const hubIdx = hubStopName ? lineSched.stops.findIndex(s => s.stopName === hubStopName) : -1;
+  const hubStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(hubStopId));
+  const hubIdx = hubStop ? scheduleStopIndex(lineSched, hubStop) : -1;
   const distBusToTarget = routeDistanceBetweenStops(lineSched, closestIdx, targetIdx);
 
   if (hubMinutes != null && hubIdx !== -1) {
@@ -245,6 +252,9 @@ export async function fetchStopETAs(stopId, options = {}) {
       const filtered = rawTraffics.filter(b =>
         !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
       );
+      // #region agent log
+      if (String(stopId) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:fetchStopETAs',message:'stop21 direct query',data:{rawCount:rawTraffics.length,filteredCount:filtered.length,companies:[...new Set(rawTraffics.map(b=>b.desLocalCompany))]},timestamp:Date.now(),hypothesisId:'H2',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
 
       if (filtered.length > 0) {
         const directBuses = [];
@@ -267,15 +277,20 @@ export async function fetchStopETAs(stopId, options = {}) {
   }
 
   // 2. HUB FALLBACK: derive ETAs from live buses across network hubs
-  // Each line has different termini — no single hub covers all lines (e.g. stop 1 is L1/L3 only)
   try {
     if (liveBuses && liveBuses.length > 0) {
       const fromLive = buildEtasFromLiveBuses(liveBuses, targetStop, targetLines);
+      // #region agent log
+      if (String(stopId) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:fetchStopETAs',message:'stop21 live fallback',data:{liveBusCount:liveBuses.length,fromLiveCount:fromLive.length,lines:fromLive.map(e=>e.desBusLine),sources:fromLive.map(e=>e.etaSource)},timestamp:Date.now(),hypothesisId:'H4',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
       if (fromLive.length > 0) return fromLive;
     }
 
     const hubEntries = await fetchHubTraffics();
     const fromHubs = buildEtasFromHubData(hubEntries, targetStop, targetLines);
+    // #region agent log
+    if (String(stopId) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:fetchStopETAs',message:'stop21 hub fallback',data:{hubEntryCount:hubEntries.length,fromHubsCount:fromHubs.length,lines:fromHubs.map(e=>e.desBusLine),sources:fromHubs.map(e=>e.etaSource)},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
+    // #endregion
     if (fromHubs.length > 0) return fromHubs;
   } catch (error) {
     console.warn('[TUSoria API] Hub fallback failed:', error);
