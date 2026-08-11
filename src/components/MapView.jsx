@@ -258,7 +258,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
   }, []);
 
   // Smooth movement animation loop:
-  // Glides marker smoothly at realistic bus speed (~20 km/h) towards newly received GPS coordinate
+  // Glides marker smoothly at realistic bus speed (~15 km/h) towards newly received GPS coordinate
   useEffect(() => {
     const animationInterval = setInterval(() => {
       busMarkersMapRef.current.forEach((item) => {
@@ -270,7 +270,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
 
         if (dist > 0.000002) {
           // Constant realistic bus gliding speed
-          const step = Math.min(dist, 0.000004);
+          const step = Math.min(dist, 0.0000015);
           currentPos.lat += (dLat / dist) * step;
           currentPos.lng += (dLng / dist) * step;
           marker.setLatLng([currentPos.lat, currentPos.lng]);
@@ -330,7 +330,6 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
             line-height: 1;
             white-space: nowrap;
             cursor: pointer;
-            transition: transform 0.3s ease;
             z-index: 1500;
           ">
             <span style="font-size: 12px; line-height: 1;">🚌</span>

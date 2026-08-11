@@ -334,7 +334,7 @@ function normalizeLineCode(rawLine, rawSae) {
 
 export async function getAllLiveBuses() {
   const hubStopIds = ['1', '89', '3', '75']; // Mariano Granados, El Salvador, Estación Autobuses, Polígono
-  const busMap = new Map();
+  const busesList = [];
 
   try {
     const responses = await Promise.allSettled(
@@ -351,13 +351,36 @@ export async function getAllLiveBuses() {
               b.latitude && b.longitude && parseFloat(b.latitude) !== 0 && parseFloat(b.longitude) !== 0
             ) {
               const lineCode = normalizeLineCode(b.desBusLine, b.idBusSAE);
-              const busKey = b.idBus ? String(b.idBus).trim() : `${lineCode}-${b.latitude}-${b.longitude}`;
-              if (!busMap.has(busKey)) {
-                busMap.set(busKey, {
-                  id: busKey,
+              const lat = parseFloat(b.latitude);
+              const lng = parseFloat(b.longitude);
+              const rawId = b.idBus ? String(b.idBus).trim() : (b.idBusSAE ? String(b.idBusSAE).trim() : null);
+
+              // Check if we already have this vehicle in busesList (by explicit ID or spatial proximity within 300m for same line)
+              let existing = busesList.find(item => {
+                if (rawId && item.rawId === rawId) return true;
+                if (item.line === lineCode) {
+                  const dLat = item.lat - lat;
+                  const dLng = item.lng - lng;
+                  return (dLat * dLat + dLng * dLng) < 0.00001; // ~300m radius
+                }
+                return false;
+              });
+
+              if (existing) {
+                // Update coordinates of existing detected bus
+                existing.lat = lat;
+                existing.lng = lng;
+                if (b.minutesArrive != null) existing.minutes = b.minutesArrive;
+              } else {
+                // Create new bus entry with stable ID
+                const lineBusCount = busesList.filter(x => x.line === lineCode).length + 1;
+                const stableId = rawId ? `BUS-${rawId}` : `BUS-${lineCode}-${lineBusCount}`;
+                busesList.push({
+                  id: stableId,
+                  rawId: rawId,
                   line: lineCode,
-                  lat: parseFloat(b.latitude),
-                  lng: parseFloat(b.longitude),
+                  lat: lat,
+                  lng: lng,
                   minutes: b.minutesArrive,
                   isLive: true
                 });
@@ -373,5 +396,5 @@ export async function getAllLiveBuses() {
     console.warn('[TUSoria API] Multi-hub live buses fetch failed', err);
   }
 
-  return Array.from(busMap.values());
+  return busesList;
 }
