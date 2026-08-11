@@ -353,15 +353,15 @@ export async function getAllLiveBuses() {
               const lineCode = normalizeLineCode(b.desBusLine, b.idBusSAE);
               const lat = parseFloat(b.latitude);
               const lng = parseFloat(b.longitude);
-              const rawId = b.idBus ? String(b.idBus).trim() : (b.idBusSAE ? String(b.idBusSAE).trim() : null);
+              const rawId = (b.idBus && String(b.idBus).trim() !== '0') ? String(b.idBus).trim() : null;
 
-              // Check if we already have this vehicle in busesList (by explicit ID or spatial proximity within 300m for same line)
+              // Check if we already have this vehicle in busesList (by explicit ID or tight spatial proximity <= 50m)
               let existing = busesList.find(item => {
                 if (rawId && item.rawId === rawId) return true;
                 if (item.line === lineCode) {
                   const dLat = item.lat - lat;
                   const dLng = item.lng - lng;
-                  return (dLat * dLat + dLng * dLng) < 0.00001; // ~300m radius
+                  return (dLat * dLat + dLng * dLng) < 0.000001; // ~50m radius
                 }
                 return false;
               });
@@ -372,11 +372,10 @@ export async function getAllLiveBuses() {
                 existing.lng = lng;
                 if (b.minutesArrive != null) existing.minutes = b.minutesArrive;
               } else {
-                // Create new bus entry with stable ID
-                const lineBusCount = busesList.filter(x => x.line === lineCode).length + 1;
-                const stableId = rawId ? `BUS-${rawId}` : `BUS-${lineCode}-${lineBusCount}`;
+                // Create new bus entry with unique key
+                const vehicleKey = rawId ? `BUS-${rawId}` : `BUS-${lineCode}-${lat.toFixed(3)}-${lng.toFixed(3)}`;
                 busesList.push({
-                  id: stableId,
+                  id: vehicleKey,
                   rawId: rawId,
                   line: lineCode,
                   lat: lat,
