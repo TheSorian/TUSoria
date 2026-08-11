@@ -293,16 +293,9 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     }
     
     const currentMap = busMarkersMapRef.current;
-    const currentBusIds = new Set(liveBuses.map(b => b.id));
+    const now = Date.now();
 
-    // Remove obsolete markers
-    currentMap.forEach((item, busId) => {
-      if (!currentBusIds.has(busId)) {
-        busesLayerRef.current.removeLayer(item.marker);
-        currentMap.delete(busId);
-      }
-    });
-
+    // Mark lastSeen time and update target position for incoming live buses
     liveBuses.forEach(b => {
       const lineFilter = selectedLineFilter ? selectedLineFilter.replace('E','') : null;
       if (lineFilter && !b.line.includes(lineFilter)) {
@@ -312,52 +305,49 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
         }
         return;
       }
-      
-      const bColor = LINE_COLORS[b.line] || '#1a4b8c';
-      
-      // Sleek, compact pill-style bus marker icon
-      const bIcon = L.divIcon({
-        className: 'compact-live-bus-pill',
-        html: `
-          <div style="
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 3px 8px;
-            background: ${bColor};
-            color: #ffffff;
-            border: 2px solid #ffffff;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-            font-weight: 800;
-            font-size: 11px;
-            line-height: 1;
-            white-space: nowrap;
-            cursor: pointer;
-            z-index: 1500;
-          ">
-            <span style="font-size: 12px; line-height: 1;">🚌</span>
-            <span>${b.line}</span>
-            <span style="
-              width: 6px;
-              height: 6px;
-              border-radius: 50%;
-              background: #34d399;
-              box-shadow: 0 0 6px #34d399;
-              display: inline-block;
-            "></span>
-          </div>
-        `,
-        iconSize: null,
-        iconAnchor: [24, 12]
-      });
 
       if (currentMap.has(b.id)) {
-        // Update target position for existing bus
         const existing = currentMap.get(b.id);
         existing.targetPos = { lat: b.lat, lng: b.lng };
+        existing.lastSeen = now;
       } else {
-        // Create new marker
+        const bColor = LINE_COLORS[b.line] || '#1a4b8c';
+        const bIcon = L.divIcon({
+          className: 'compact-live-bus-pill',
+          html: `
+            <div style="
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 3px 8px;
+              background: ${bColor};
+              color: #ffffff;
+              border: 2px solid #ffffff;
+              border-radius: 12px;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+              font-weight: 800;
+              font-size: 11px;
+              line-height: 1;
+              white-space: nowrap;
+              cursor: pointer;
+              z-index: 1500;
+            ">
+              <span style="font-size: 12px; line-height: 1;">🚌</span>
+              <span>${b.line}</span>
+              <span style="
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: #34d399;
+                box-shadow: 0 0 6px #34d399;
+                display: inline-block;
+              "></span>
+            </div>
+          `,
+          iconSize: null,
+          iconAnchor: [24, 12]
+        });
+
         const marker = L.marker([b.lat, b.lng], { icon: bIcon, zIndexOffset: 1500 }).addTo(busesLayerRef.current);
         marker.bindPopup(`
           <div style="color:#fff; padding:6px; font-size:12px; line-height:1.4;">
@@ -370,8 +360,17 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
           marker,
           currentPos: { lat: b.lat, lng: b.lng },
           targetPos: { lat: b.lat, lng: b.lng },
-          line: b.line
+          line: b.line,
+          lastSeen: now
         });
+      }
+    });
+
+    // Remove markers ONLY if not seen by API for > 45 seconds (grace period against temporary API timeouts)
+    currentMap.forEach((item, busId) => {
+      if (now - item.lastSeen > 45000) {
+        busesLayerRef.current.removeLayer(item.marker);
+        currentMap.delete(busId);
       }
     });
   }, [liveBuses, selectedLineFilter]);
