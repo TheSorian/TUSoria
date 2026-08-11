@@ -242,7 +242,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     fetchBuses();
     const fetchInterval = setInterval(() => {
       if (mounted) fetchBuses();
-    }, 4000);
+    }, 8000);
 
     const timerInterval = setInterval(() => {
       if (mounted) {
