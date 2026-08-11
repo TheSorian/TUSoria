@@ -226,58 +226,159 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     }
   }, [userLocation, target, activeRoute]);
 
+  const busMarkersMapRef = useRef(new Map());
+  const [lastFetchTime, setLastFetchTime] = useState(Date.now());
+  const [secondsAgo, setSecondsAgo] = useState(0);
+
+  const fetchBuses = async () => {
+    const buses = await getAllLiveBuses();
+    setLiveBuses(buses);
+    setLastFetchTime(Date.now());
+    setSecondsAgo(0);
+  };
+
   useEffect(() => {
     let mounted = true;
-    const fetchBuses = async () => {
-      const buses = await getAllLiveBuses();
-      if (mounted) setLiveBuses(buses);
-    };
     fetchBuses();
-    const interval = setInterval(fetchBuses, 10000);
+    const fetchInterval = setInterval(() => {
+      if (mounted) fetchBuses();
+    }, 8000);
+
+    const timerInterval = setInterval(() => {
+      if (mounted) {
+        setSecondsAgo(prev => prev + 1);
+      }
+    }, 1000);
+
     return () => {
       mounted = false;
-      clearInterval(interval);
+      clearInterval(fetchInterval);
+      clearInterval(timerInterval);
     };
   }, []);
 
+  // Continuous smooth movement interpolation loop (simulates continuous bus movement between GPS polls)
+  useEffect(() => {
+    const animationInterval = setInterval(() => {
+      busMarkersMapRef.current.forEach((item) => {
+        const { marker, currentPos, targetPos, isLive } = item;
+        
+        let dLat = targetPos.lat - currentPos.lat;
+        let dLng = targetPos.lng - currentPos.lng;
+
+        const distSq = dLat * dLat + dLng * dLng;
+
+        if (distSq > 0.000000001) {
+          // Smoothly interpolate towards target
+          currentPos.lat += dLat * 0.12;
+          currentPos.lng += dLng * 0.12;
+          marker.setLatLng([currentPos.lat, currentPos.lng]);
+        } else if (!isLive) {
+          // For simulated buses, gently advance along small drift path
+          currentPos.lat += Math.sin(Date.now() / 4000) * 0.000005;
+          currentPos.lng += Math.cos(Date.now() / 4000) * 0.000005;
+          targetPos.lat = currentPos.lat;
+          targetPos.lng = currentPos.lng;
+          marker.setLatLng([currentPos.lat, currentPos.lng]);
+        }
+      });
+    }, 100);
+
+    return () => clearInterval(animationInterval);
+  }, []);
+
+  // Update bus markers on map when liveBuses or selectedLineFilter changes
   useEffect(() => {
     if (!mapRef.current) return;
-    if (busesLayerRef.current) {
-      mapRef.current.removeLayer(busesLayerRef.current);
+    if (!busesLayerRef.current) {
+      busesLayerRef.current = L.layerGroup().addTo(mapRef.current);
     }
-    busesLayerRef.current = L.layerGroup().addTo(mapRef.current);
     
+    const currentMap = busMarkersMapRef.current;
+    const currentBusIds = new Set(liveBuses.map(b => b.id));
+
+    // Remove obsolete markers
+    currentMap.forEach((item, busId) => {
+      if (!currentBusIds.has(busId)) {
+        busesLayerRef.current.removeLayer(item.marker);
+        currentMap.delete(busId);
+      }
+    });
+
     liveBuses.forEach(b => {
       const lineFilter = selectedLineFilter ? selectedLineFilter.replace('E','') : null;
-      if (lineFilter && !b.line.includes(lineFilter)) return;
+      if (lineFilter && !b.line.includes(lineFilter)) {
+        if (currentMap.has(b.id)) {
+          busesLayerRef.current.removeLayer(currentMap.get(b.id).marker);
+          currentMap.delete(b.id);
+        }
+        return;
+      }
       
-      const bColor = LINE_COLORS[b.line] || '#ffffff';
+      const bColor = LINE_COLORS[b.line] || '#1a4b8c';
+      
+      // Sleek, compact pill-style bus marker icon
       const bIcon = L.divIcon({
-        className: 'global-live-bus-marker',
+        className: 'compact-live-bus-pill',
         html: `
-          <div style="position: relative; display: flex; align-items: center; justify-content: center; z-index: 1000;">
-            <div style="
-              width: 32px; 
-              height: 32px; 
-              background: ${bColor}; 
-              border: 3px solid white; 
-              border-radius: 50%; 
-              box-shadow: 0 4px 12px rgba(0,0,0,0.6);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: white;
-              font-weight: 900;
-              font-size: 14px;
-            ">
-              ${b.line.replace('L','')}
-            </div>
+          <div style="
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 3px 8px;
+            background: ${bColor};
+            color: #ffffff;
+            border: 2px solid #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-weight: 800;
+            font-size: 11px;
+            line-height: 1;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            z-index: 1500;
+          ">
+            <span style="font-size: 12px; line-height: 1;">🚌</span>
+            <span>${b.line}</span>
+            <span style="
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              background: ${b.isLive ? '#34d399' : '#fbbf24'};
+              box-shadow: 0 0 6px ${b.isLive ? '#34d399' : '#fbbf24'};
+              display: inline-block;
+            "></span>
           </div>
         `,
-        iconSize: [32, 32],
-        iconAnchor: [16, 16]
+        iconSize: null,
+        iconAnchor: [24, 12]
       });
-      L.marker([b.lat, b.lng], { icon: bIcon, zIndexOffset: 1000 }).addTo(busesLayerRef.current);
+
+      if (currentMap.has(b.id)) {
+        // Update target position for existing bus
+        const existing = currentMap.get(b.id);
+        existing.targetPos = { lat: b.lat, lng: b.lng };
+        existing.isLive = b.isLive;
+      } else {
+        // Create new marker
+        const marker = L.marker([b.lat, b.lng], { icon: bIcon, zIndexOffset: 1500 }).addTo(busesLayerRef.current);
+        marker.bindPopup(`
+          <div style="color:#fff; padding:6px; font-size:12px;">
+            <strong>Bus Línea ${b.line}</strong><br/>
+            ${b.isLive ? '🟢 Posición GPS en Vivo' : '🟡 Horario Estimado'}<br/>
+            ${b.minutes ? `Llegada aprox: ${b.minutes} min` : ''}
+          </div>
+        `);
+
+        currentMap.set(b.id, {
+          marker,
+          currentPos: { lat: b.lat, lng: b.lng },
+          targetPos: { lat: b.lat, lng: b.lng },
+          line: b.line,
+          isLive: b.isLive
+        });
+      }
     });
   }, [liveBuses, selectedLineFilter]);
   const layersRef = useRef(null);
@@ -579,7 +680,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
             const bIcon = L.divIcon({
               className: 'live-bus-vehicle-marker',
               html: `
-                <div style="position: relative; display: flex; align-items: center;">
+                <div style="position: relative; display: flex; align-items: center; z-index: 2500;">
                   <div style="
                     position: absolute; 
                     inset: -4px; 
@@ -598,21 +699,24 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
                     font-size: 11px; 
                     border: 2px solid #ffffff; 
                     box-shadow: 0 4px 14px rgba(0,0,0,0.6);
-                    display: flex;
+                    display: inline-flex;
                     align-items: center;
                     gap: 5px;
                     white-space: nowrap;
-                    z-index: 5;
+                    max-width: 220px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    z-index: 2500;
                   ">
-                    <span style="font-size: 13px;">🚌</span>
-                    <span>Sube a ${leg.lineCode}</span>
+                    <span style="font-size: 13px; flex-shrink: 0;">🚌</span>
+                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Sube a ${leg.lineCode}</span>
                   </div>
                 </div>
               `,
-              iconSize: [110, 28],
-              iconAnchor: [55, 14]
+              iconSize: null,
+              iconAnchor: [50, 14]
             });
-            L.marker(leg.boardCoords, { icon: bIcon }).addTo(layerGroup);
+            L.marker(leg.boardCoords, { icon: bIcon, zIndexOffset: 2500 }).addTo(layerGroup);
           }
 
           if (leg.alightCoords) {
@@ -629,19 +733,23 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
                   font-size: 11px; 
                   border: 2px solid #ffffff; 
                   box-shadow: 0 4px 14px rgba(0,0,0,0.6);
-                  display: flex;
+                  display: inline-flex;
                   align-items: center;
                   gap: 5px;
                   white-space: nowrap;
+                  max-width: 220px;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  z-index: 2500;
                 ">
-                  <span>🏁</span>
-                  <span>Baja en ${leg.alightStop.split('/')[0]}</span>
+                  <span style="flex-shrink: 0;">🏁</span>
+                  <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Baja en ${leg.alightStop.split('/')[0]}</span>
                 </div>
               `,
-              iconSize: [110, 28],
-              iconAnchor: [55, 14]
+              iconSize: null,
+              iconAnchor: [50, 14]
             });
-            L.marker(leg.alightCoords, { icon: aIcon }).addTo(layerGroup);
+            L.marker(leg.alightCoords, { icon: aIcon, zIndexOffset: 2500 }).addTo(layerGroup);
           }
         }
       });
@@ -672,6 +780,52 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
         ref={mapContainerRef} 
         style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} 
       />
+
+      {/* Live Sync Status Banner */}
+      <div style={{
+        position: 'absolute',
+        top: '16px',
+        left: '16px',
+        zIndex: 1000,
+        background: 'rgba(17, 24, 39, 0.88)',
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        borderRadius: '20px',
+        padding: '6px 12px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        color: '#ffffff',
+        fontSize: '11px',
+        fontWeight: '600',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.5)'
+      }}>
+        <span style={{
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          background: '#34d399',
+          boxShadow: '0 0 10px #34d399',
+          display: 'inline-block'
+        }} />
+        <span>En vivo • {liveBuses.length} buses ({secondsAgo}s)</span>
+        <button
+          onClick={fetchBuses}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#60a5fa',
+            cursor: 'pointer',
+            padding: '2px 4px',
+            fontSize: '12px',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+          title="Sincronizar ahora"
+        >
+          🔄
+        </button>
+      </div>
 
       {/* Edit Mode Toggle Button */}
       <div style={{
