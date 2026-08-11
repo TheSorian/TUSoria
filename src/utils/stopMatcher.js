@@ -26,10 +26,19 @@ export function stripStopPrefix(s) {
   return s.replace(/^(calle|plaza|avenida|avda|camino|carretera)\s*/, '');
 }
 
+function extractDirectionSuffix(name) {
+  const match = String(name).match(/\(([AB])\)\s*$/i);
+  return match ? match[1].toUpperCase() : null;
+}
+
 /**
  * Robustly checks if two stop names represent the exact same physical stop
  */
 export function areStopsMatching(name1, name2) {
+  const dir1 = extractDirectionSuffix(name1);
+  const dir2 = extractDirectionSuffix(name2);
+  if (dir1 && dir2 && dir1 !== dir2) return false;
+
   const norm1 = cleanStopName(name1);
   const norm2 = cleanStopName(name2);
 
@@ -74,5 +83,16 @@ export function areStopsMatching(name1, name2) {
  */
 export function findMatchingStopInSchedule(avanzaStops, soriaStopObj) {
   if (!avanzaStops || avanzaStops.length === 0 || !soriaStopObj) return null;
-  return avanzaStops.find(s => areStopsMatching(s.name, soriaStopObj.name)) || null;
+
+  const dir = extractDirectionSuffix(soriaStopObj.name);
+  const matches = avanzaStops.filter(s => areStopsMatching(s.name, soriaStopObj.name));
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0];
+
+  if (dir) {
+    const exactDir = matches.find(s => extractDirectionSuffix(s.name) === dir);
+    if (exactDir) return exactDir;
+  }
+
+  return matches[0];
 }

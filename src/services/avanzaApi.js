@@ -86,9 +86,6 @@ function estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinut
 
   const closestIdx = findClosestStopIdx(lineSched, bLat, bLng);
   const targetIdx = scheduleStopIndex(lineSched, targetStop);
-  // #region agent log
-  if (String(targetStop.id) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:estimateEtaFromGpsAndHub',message:'stop21 indices',data:{lineCode,closestIdx,targetIdx,hubStopId,hubMinutes,bLat,bLng},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
-  // #endregion
   if (closestIdx === -1 || targetIdx === -1 || targetIdx < closestIdx) return null;
 
   if (String(targetStop.id) === String(hubStopId) && hubMinutes != null) {
@@ -252,9 +249,6 @@ export async function fetchStopETAs(stopId, options = {}) {
       const filtered = rawTraffics.filter(b =>
         !b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')
       );
-      // #region agent log
-      if (String(stopId) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:fetchStopETAs',message:'stop21 direct query',data:{rawCount:rawTraffics.length,filteredCount:filtered.length,companies:[...new Set(rawTraffics.map(b=>b.desLocalCompany))]},timestamp:Date.now(),hypothesisId:'H2',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
 
       if (filtered.length > 0) {
         const directBuses = [];
@@ -280,17 +274,11 @@ export async function fetchStopETAs(stopId, options = {}) {
   try {
     if (liveBuses && liveBuses.length > 0) {
       const fromLive = buildEtasFromLiveBuses(liveBuses, targetStop, targetLines);
-      // #region agent log
-      if (String(stopId) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:fetchStopETAs',message:'stop21 live fallback',data:{liveBusCount:liveBuses.length,fromLiveCount:fromLive.length,lines:fromLive.map(e=>e.desBusLine),sources:fromLive.map(e=>e.etaSource)},timestamp:Date.now(),hypothesisId:'H4',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
       if (fromLive.length > 0) return fromLive;
     }
 
     const hubEntries = await fetchHubTraffics();
     const fromHubs = buildEtasFromHubData(hubEntries, targetStop, targetLines);
-    // #region agent log
-    if (String(stopId) === '21') fetch('http://127.0.0.1:7555/ingest/e54c1fa8-acdc-4a78-ae20-0fe4789acb57',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'bc2aca'},body:JSON.stringify({sessionId:'bc2aca',location:'avanzaApi.js:fetchStopETAs',message:'stop21 hub fallback',data:{hubEntryCount:hubEntries.length,fromHubsCount:fromHubs.length,lines:fromHubs.map(e=>e.desBusLine),sources:fromHubs.map(e=>e.etaSource)},timestamp:Date.now(),hypothesisId:'H1',runId:'post-fix'})}).catch(()=>{});
-    // #endregion
     if (fromHubs.length > 0) return fromHubs;
   } catch (error) {
     console.warn('[TUSoria API] Hub fallback failed:', error);

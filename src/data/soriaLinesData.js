@@ -138,8 +138,7 @@ export const SORIA_ALL_STOPS = [
     "lines": [
       "L1",
       "L3",
-      "C",
-      "EX"
+      "C"
     ]
   },
   {
