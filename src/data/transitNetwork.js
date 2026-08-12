@@ -9,14 +9,12 @@ const lineMap = new Map();
 
 /**
  * Initializes the normalized network model in memory.
- * This should be called before accessing any of the getters.
  */
 export function initTransitNetwork() {
   if (isInitialized) return;
 
   // 1. Initialize Stops
   SORIA_ALL_STOPS.forEach(stop => {
-    // For urban lines, TUSoria stop.id strictly equals Avanza busStopID
     stopMap.set(String(stop.id), {
       ...stop,
       id: String(stop.id)
@@ -29,48 +27,58 @@ export function initTransitNetwork() {
     const avanzaSched = AVANZA_FULL_SCHEDULES[lineDef.code];
     const geometrySegments = REAL_LINE_POLYLINES[lineDef.code] || [];
 
-    const line = {
-      code: lineDef.code,
-      metadata: {
-        id: lineDef.id,
-        name: lineDef.name,
-        shortName: lineDef.shortName,
-        color: lineDef.color,
-        badgeClass: lineDef.badgeClass,
-        isRealTimeAvailable: lineDef.isRealTimeAvailable,
-        terminals: lineDef.terminals,
-        frequencies: lineDef.frequencies,
-        provider: isLC ? 'external' : 'avanza',
-        serviceType: isLC ? 'schedule-only' : 'full'
-      },
-      directions: [],
-      geometry: geometrySegments
-    };
-
     if (isLC) {
-      // For LC, we map its custom structure to the normalized model
-      line.directions = [
-        {
-          id: 'camaretasToSoria',
-          orderedStops: CAMARETAS_TIMETABLE.stopsOrder.camaretasToSoria.map(name => ({ name }))
+      // External Bidirectional Line (LC)
+      const lcLine = {
+        code: lineDef.code,
+        metadata: {
+          id: lineDef.id,
+          name: lineDef.name,
+          shortName: lineDef.shortName,
+          color: lineDef.color,
+          badgeClass: lineDef.badgeClass,
+          isRealTimeAvailable: lineDef.isRealTimeAvailable,
+          terminals: lineDef.terminals,
+          frequencies: lineDef.frequencies,
+          provider: 'external',
         },
-        {
-          id: 'soriaToCamaretas',
-          orderedStops: CAMARETAS_TIMETABLE.stopsOrder.soriaToCamaretas.map(name => ({ name }))
-        }
-      ];
+        serviceType: 'schedule-only',
+        directions: {
+          camaretasToSoria: {
+            id: 'camaretasToSoria',
+            orderedStops: CAMARETAS_TIMETABLE.stopsOrder.camaretasToSoria.map(name => ({ name })),
+            geometryDirection: 'forward' // Logical indicator
+          },
+          soriaToCamaretas: {
+            id: 'soriaToCamaretas',
+            orderedStops: CAMARETAS_TIMETABLE.stopsOrder.soriaToCamaretas.map(name => ({ name })),
+            geometryDirection: 'reverse' // Logical indicator
+          }
+        },
+        geometry: geometrySegments // Shared physical geometry array
+      };
+      lineMap.set(lineDef.code, lcLine);
     } else {
-      // For Avanza lines, schedules only define a single continuous list of stops.
-      // Directions A/B are implicitly handled within the sequence rather than explicitly split by the API.
-      line.directions = [
-        {
-          id: 'default',
-          orderedStops: avanzaSched?.stops || []
-        }
-      ];
+      // Urban Lines (Single Direction of Operation)
+      const urbanLine = {
+        code: lineDef.code,
+        metadata: {
+          id: lineDef.id,
+          name: lineDef.name,
+          shortName: lineDef.shortName,
+          color: lineDef.color,
+          badgeClass: lineDef.badgeClass,
+          isRealTimeAvailable: lineDef.isRealTimeAvailable,
+          terminals: lineDef.terminals,
+          frequencies: lineDef.frequencies,
+          provider: 'avanza',
+        },
+        serviceType: 'full',
+        orderedStops: avanzaSched?.stops || [],
+        geometry: geometrySegments // Geometry natively matches the order of operation
+      };
+      lineMap.set(lineDef.code, urbanLine);
     }
-
-    lineMap.set(lineDef.code, line);
   });
 
   isInitialized = true;
@@ -89,23 +97,44 @@ export function getLineByCode(code) {
 export function getLinesForStop(stopId) {
   const stop = getStopById(stopId);
   if (!stop) return [];
-  // Ensure we only return line definitions that exist in the line map
   return stop.lines.map(code => getLineByCode(code)).filter(Boolean);
 }
 
-export function getDirectionsForLine(lineCode) {
-  const line = getLineByCode(lineCode);
-  return line ? line.directions : [];
-}
-
-export function getOrderedStopsForLine(lineCode, directionId = 'default') {
+/**
+ * Returns the ordered sequence of stops for a line.
+ * For LC, you must provide a directionId ('camaretasToSoria' or 'soriaToCamaretas').
+ */
+export function getOrderedStopsForLine(lineCode, directionId = null) {
   const line = getLineByCode(lineCode);
   if (!line) return [];
-  const dir = line.directions.find(d => d.id === directionId);
-  return dir ? dir.orderedStops : [];
+
+  if (line.code === 'LC') {
+    if (!directionId || !line.directions[directionId]) return [];
+    return line.directions[directionId].orderedStops;
+  }
+
+  // For urban lines, there's only one operational direction
+  return line.orderedStops;
 }
 
-export function getGeometryForLine(lineCode) {
+/**
+ * Retrieves the geometry for a line.
+ * For LC, if a directionId is provided, it returns the geometry logically oriented for that direction.
+ * Note: reversing coordinates logic can be built here if needed, but for now we expose the shared array or reversed array.
+ */
+export function getGeometryForLine(lineCode, directionId = null) {
   const line = getLineByCode(lineCode);
-  return line ? line.geometry : [];
+  if (!line) return [];
+
+  if (line.code === 'LC' && directionId) {
+    const dir = line.directions[directionId];
+    if (dir && dir.geometryDirection === 'reverse') {
+      // Create a reversed copy of the segments without mutating the original
+      // A segment is an array of [lat, lng], so we reverse the points in each segment, 
+      // and reverse the order of segments.
+      return [...line.geometry].map(segment => [...segment].reverse()).reverse();
+    }
+  }
+
+  return line.geometry;
 }

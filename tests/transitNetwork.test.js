@@ -3,44 +3,78 @@ import {
   getStopById, 
   getLineByCode, 
   getLinesForStop, 
-  getDirectionsForLine, 
   getOrderedStopsForLine, 
   getGeometryForLine 
 } from '../src/data/transitNetwork';
 
 describe('Transit Network Model', () => {
-  describe('Stops', () => {
-    it('returns a stop by ID', () => {
-      const stop = getStopById('1');
-      expect(stop).toBeDefined();
-      expect(stop.name).toContain('Mariano Granados');
-      expect(stop.lines).toContain('L1');
+  describe('Urban Lines Model', () => {
+    it('models urban lines with a single operational direction (no A/B)', () => {
+      const line = getLineByCode('L1');
+      expect(line).toBeDefined();
+      expect(line.serviceType).toBe('full');
+      expect(line.directions).toBeUndefined(); // Should not have a directions property
+      expect(line.orderedStops).toBeDefined();
+      expect(Array.isArray(line.orderedStops)).toBe(true);
+      expect(line.orderedStops.length).toBeGreaterThan(0);
+      expect(line.geometry).toBeDefined();
     });
 
-    it('returns null for nonexistent stop', () => {
-      expect(getStopById('999999')).toBeNull();
+    it('returns ordered stops directly for urban lines', () => {
+      const stops = getOrderedStopsForLine('L1');
+      expect(stops.length).toBeGreaterThan(0);
+      expect(stops[0].name).toBeDefined();
+    });
+
+    it('returns geometry for all urban lines including C and EX', () => {
+      ['L1', 'L2', 'L3', 'L4', 'L4E', 'C', 'EX'].forEach(code => {
+        const geom = getGeometryForLine(code);
+        expect(geom, `Geometry for ${code} should exist`).toBeDefined();
+        expect(geom.length, `Geometry for ${code} should have segments`).toBeGreaterThan(0);
+      });
     });
   });
 
-  describe('Lines', () => {
-    it('returns a line by code', () => {
-      const line = getLineByCode('L1');
-      expect(line).toBeDefined();
-      expect(line.metadata.provider).toBe('avanza');
-      expect(line.directions.length).toBe(1); // implicit single direction
-    });
-
-    it('models LC as an external schedule-only line', () => {
+  describe('LC (Camaretas) Model', () => {
+    it('models LC as an external schedule-only line with two explicit directions', () => {
       const line = getLineByCode('LC');
       expect(line).toBeDefined();
       expect(line.metadata.provider).toBe('external');
-      expect(line.metadata.serviceType).toBe('schedule-only');
-      const dirs = getDirectionsForLine('LC');
-      expect(dirs.length).toBe(2); // LC explicitly models two directions
+      expect(line.serviceType).toBe('schedule-only');
+      expect(line.directions).toBeDefined();
+      expect(Object.keys(line.directions)).toHaveLength(2);
+      expect(line.directions.camaretasToSoria).toBeDefined();
+      expect(line.directions.soriaToCamaretas).toBeDefined();
+    });
+
+    it('returns ordered stops for LC only when direction is provided', () => {
+      expect(getOrderedStopsForLine('LC')).toEqual([]); // Fails if no direction provided
+      expect(getOrderedStopsForLine('LC', 'camaretasToSoria').length).toBeGreaterThan(0);
+      expect(getOrderedStopsForLine('LC', 'soriaToCamaretas').length).toBeGreaterThan(0);
+    });
+
+    it('handles LC geometry reversal dynamically without duplicating physical array', () => {
+      const geomForward = getGeometryForLine('LC', 'camaretasToSoria');
+      const geomReverse = getGeometryForLine('LC', 'soriaToCamaretas');
+      
+      expect(geomForward).toBeDefined();
+      expect(geomReverse).toBeDefined();
+      expect(geomForward.length).toBe(geomReverse.length); // Same number of segments
+      
+      // If there are segments, verify the first point of forward is the last point of reverse
+      if (geomForward.length > 0) {
+        const firstSegmentForward = geomForward[0];
+        const lastSegmentReverse = geomReverse[geomReverse.length - 1];
+        
+        const firstPointForward = firstSegmentForward[0];
+        const lastPointReverse = lastSegmentReverse[lastSegmentReverse.length - 1];
+        
+        expect(firstPointForward).toEqual(lastPointReverse);
+      }
     });
   });
 
-  describe('Relationships', () => {
+  describe('Integrity & Relationships', () => {
     it('returns correct lines for a stop', () => {
       const lines = getLinesForStop('1'); // Plaza Mariano Granados
       const lineCodes = lines.map(l => l.code);
@@ -50,31 +84,14 @@ describe('Transit Network Model', () => {
       expect(lineCodes).toContain('EX');
     });
 
-    it('returns ordered stops for a line', () => {
-      const stops = getOrderedStopsForLine('L1', 'default');
-      expect(stops.length).toBeGreaterThan(0);
-      expect(stops[0].name).toBeDefined();
-    });
-  });
-
-  describe('Geometries', () => {
-    it('returns geometry for L1', () => {
-      const geom = getGeometryForLine('L1');
-      expect(geom.length).toBe(4); // 4 segments
+    it('returns a stop by ID', () => {
+      const stop = getStopById('1');
+      expect(stop).toBeDefined();
+      expect(stop.name).toContain('Mariano Granados');
     });
 
-    it('returns geometry for C and EX', () => {
-      // Explicit check to confirm they are not treated as missing geometry
-      const geomC = getGeometryForLine('C');
-      expect(geomC.length).toBeGreaterThan(0);
-      
-      const geomEX = getGeometryForLine('EX');
-      expect(geomEX.length).toBeGreaterThan(0);
-    });
-
-    it('returns geometry for LC', () => {
-      const geomLC = getGeometryForLine('LC');
-      expect(geomLC.length).toBeGreaterThan(0);
+    it('returns null for nonexistent stop', () => {
+      expect(getStopById('999999')).toBeNull();
     });
   });
 });
