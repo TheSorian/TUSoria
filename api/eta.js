@@ -1,3 +1,8 @@
+import https from 'https';
+import tls from 'tls';
+import fs from 'fs';
+import path from 'path';
+
 // In-memory cache for fast responses (20 seconds TTL)
 const memoryCache = new Map();
 const CACHE_TTL_MS = 20 * 1000; // 20 seconds TTL
@@ -20,6 +25,47 @@ function enforceCacheLimit() {
       toDelete.forEach(([key]) => memoryCache.delete(key));
     }
   }
+}
+
+let avanzaHttpsAgent = null;
+function getAvanzaAgent() {
+  if (!avanzaHttpsAgent) {
+    // Read the intermediate certificate bundled in the project
+    const certPath = path.join(process.cwd(), 'certs', 'sectigo-ov-r36.pem');
+    const extraCa = fs.readFileSync(certPath, 'utf8');
+    
+    // Create an explicit Agent that trusts the default Node CAs plus the Sectigo intermediate
+    avanzaHttpsAgent = new https.Agent({
+      ca: [...tls.rootCertificates, extraCa],
+      rejectUnauthorized: true // Ensure standard verification is STILL enabled
+    });
+  }
+  return avanzaHttpsAgent;
+}
+
+// Promisified https.request to mimic the fetch interface we used previously
+function fetchAvanza(endpoint, options) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(endpoint, options, (res) => {
+      let rawText = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => rawText += chunk);
+      res.on('end', () => {
+        resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          text: async () => rawText
+        });
+      });
+    });
+    
+    req.on('error', reject);
+    
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
 }
 
 export default async function handler(req, res) {
@@ -51,12 +97,14 @@ export default async function handler(req, res) {
   }).toString();
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchAvanza(endpoint, {
       method: 'POST',
+      agent: getAvanzaAgent(),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) TUSoria/1.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) TUSoria/1.0',
+        'Content-Length': Buffer.byteLength(bodyData)
       },
       body: bodyData
     });
