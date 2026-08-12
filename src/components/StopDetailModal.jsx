@@ -9,8 +9,6 @@ import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 export default function StopDetailModal({ stop, onClose }) {
   const isLcStop = stop.lines.includes('LC') && !stop.lines.some(l => l !== 'LC');
   const { liveBuses } = useLiveData();
-  const liveBusesRef = React.useRef(liveBuses);
-  liveBusesRef.current = liveBuses;
   const [activeTab, setActiveTab] = useState(isLcStop ? 'schedule' : 'realtime');
   const [etas, setEtas] = useState(() => isLcStop ? [] : getFallbackETAs(stop.id));
   const [isRefreshing, setIsRefreshing] = useState(!isLcStop);
@@ -58,21 +56,43 @@ export default function StopDetailModal({ stop, onClose }) {
     setDragY(0);
   };
 
+  const hasEtasRef = React.useRef(etas.length > 0);
+  hasEtasRef.current = etas.length > 0;
+
   useEffect(() => {
     if (isLcStop) return;
 
+    // We use an AbortController/cancelled flag to prevent older responses from overwriting newer ones.
+    // This is vital since liveBuses changes periodically and triggers this effect.
     let cancelled = false;
+    
     async function load() {
-      setIsRefreshing(true);
-      const data = await fetchStopETAs(stop.id, { liveBuses: liveBusesRef.current });
-      if (!cancelled) {
-        setEtas(data);
-        setIsRefreshing(false);
+      // Only show refreshing if we don't have ETAs yet, to avoid UI flickering during background updates
+      if (!hasEtasRef.current) {
+        setIsRefreshing(true);
+      }
+      
+      try {
+        const data = await fetchStopETAs(stop.id, { liveBuses });
+        
+        if (!cancelled) {
+          setEtas(data);
+        }
+      } catch (err) {
+        console.error("Failed to update modal ETAs:", err);
+      } finally {
+        if (!cancelled) {
+          setIsRefreshing(false);
+        }
       }
     }
+    
     load();
-    return () => { cancelled = true; };
-  }, [stop, isLcStop]);
+    
+    return () => { 
+      cancelled = true; 
+    };
+  }, [stop.id, liveBuses, isLcStop]);
 
   function getEtaBadge(eta) {
     if (!eta.isLive || eta.etaSource === 'scheduled') {

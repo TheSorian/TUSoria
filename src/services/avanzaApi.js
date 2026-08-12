@@ -277,6 +277,11 @@ export async function fetchStopETAs(stopId, options = {}) {
       if (fromLive.length > 0) return fromLive;
     }
 
+    // If liveBuses was explicitly provided (even if empty) or skipHubs is true, avoid redundant network requests
+    if (options.skipHubs || liveBuses !== null) {
+      return getFallbackETAs(stopId);
+    }
+
     const hubEntries = await fetchHubTraffics();
     const fromHubs = buildEtasFromHubData(hubEntries, targetStop, targetLines);
     if (fromHubs.length > 0) return fromHubs;
