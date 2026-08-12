@@ -816,33 +816,6 @@ export const REAL_SORIA_STOPS = [
     "lines": [
       "L4E"
     ]
-  },
-  {
-    "id": "LC1",
-    "name": "CC Camaretas (Golmayo)",
-    "lat": 41.7592,
-    "lng": -2.5012,
-    "lines": [
-      "LC"
-    ]
-  },
-  {
-    "id": "LC2",
-    "name": "Centro Cívico Golmayo",
-    "lat": 41.7545,
-    "lng": -2.5089,
-    "lines": [
-      "LC"
-    ]
-  },
-  {
-    "id": "LC3",
-    "name": "Urbanización Los Frayles",
-    "lat": 41.7512,
-    "lng": -2.5125,
-    "lines": [
-      "LC"
-    ]
   }
 ];
 
