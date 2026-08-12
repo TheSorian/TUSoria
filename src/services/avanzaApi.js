@@ -408,7 +408,7 @@ export function getFallbackETAs(stopId) {
   return results;
 }
 
-function normalizeLineCode(rawLine, rawSae) {
+export function normalizeLineCode(rawLine, rawSae) {
   const sae = (rawSae || '').trim().toUpperCase();
   const line = (rawLine || '').trim().toUpperCase();
 
