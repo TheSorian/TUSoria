@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 
+import { vercelApiProxyPlugin } from './api/devProxy.js';
+
 export default defineConfig({
   server: {
     host: true,
@@ -16,6 +18,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    vercelApiProxyPlugin(),
     basicSsl(),
     react(),
     VitePWA({
