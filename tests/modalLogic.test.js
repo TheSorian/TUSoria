@@ -9,28 +9,7 @@ describe('StopDetailModal Logic & avanzaApi.js Changes', () => {
     vi.clearAllMocks();
   });
 
-  describe('fetchStopETAs (Case D & E)', () => {
-    it('does not trigger redundant hub fetches when liveBuses are provided (Case D)', async () => {
-      // Mock /api/eta to fail so it falls back
-      global.fetch.mockResolvedValueOnce({ ok: false, status: 500 });
-      
-      const dummyLiveBuses = [{ line: 'L1', stopId: '2', minutes: 5 }];
-      
-      // If we call fetchStopETAs with liveBuses, it should NOT fetch hubs
-      // We know fetchHubTraffics calls fetch() internally. So fetch should be called EXACTLY ONCE (for /api/eta).
-      await fetchStopETAs('1', { liveBuses: dummyLiveBuses });
-      
-      expect(global.fetch).toHaveBeenCalledTimes(1);
-      
-      // Compare without liveBuses
-      global.fetch.mockResolvedValue({ ok: false, status: 500 }); // Mock all fetches to fail
-      await fetchStopETAs('1', { liveBuses: null });
-      
-      // It should call /api/eta (1), AND THEN fetchHubTraffics (which calls fetch for all 8 hubs)
-      // So fetch should be called 1 + 8 = 9 times
-      expect(global.fetch).toHaveBeenCalledTimes(9); 
-    });
-
+  describe('fetchStopETAs (Case E)', () => {
     it('conserves ETA sources (direct vs interpolated vs scheduled) (Case E)', async () => {
       // Mock /api/eta to succeed with a direct ETA
       global.fetch.mockResolvedValueOnce({

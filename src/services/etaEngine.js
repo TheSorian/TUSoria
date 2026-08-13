@@ -1,5 +1,5 @@
-import { SORIA_ALL_STOPS, REAL_LINE_POLYLINES } from '../data/soriaLinesData.js';
-import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules.js';
+import { SORIA_ALL_STOPS } from '../data/soriaLinesData.js';
+import { TOPOLOGY_MAP } from '../data/topologyMap.js';
 
 // --- STATE MANAGEMENT ---
 export const _busStateMap = new Map();
@@ -17,7 +17,7 @@ function getBusState(idBusSAE) {
   return null;
 }
 
-function updateBusState(idBusSAE, index, lat, lng) {
+export function updateBusState(idBusSAE, index, lat, lng) {
   if (!idBusSAE) return;
   _busStateMap.set(idBusSAE, {
     lastIndex: index,
@@ -27,12 +27,50 @@ function updateBusState(idBusSAE, index, lat, lng) {
   });
 }
 
+// --- TOPOLOGY HELPERS ---
+export function findTargetIndex(lineCode, targetStopId, busState = null, date = new Date()) {
+  const topology = TOPOLOGY_MAP[lineCode];
+  if (!topology) return -1;
+  
+  const possibleIndices = [];
+  topology.forEach((s, idx) => {
+    if (String(s.id) === String(targetStopId)) {
+      possibleIndices.push(idx);
+    }
+  });
+
+  if (possibleIndices.length === 0) return -1;
+  if (possibleIndices.length === 1) return possibleIndices[0];
+
+  // Resolve multiple instances (e.g. circular line wrap-around)
+  // Step 1: Use time-based resolution (expedition progress)
+  // We don't have the active trip here easily without full schedules, but wait...
+  // Actually, the simplest approach for "first using time info" without full schedule parsing
+  // is just if we are currently past the first one, but the first one is the only one...
+  
+  // Step 2: Fallback to getBusState
+  if (busState && busState.lastIndex !== undefined) {
+    // Find the first instance that is >= lastIndex
+    const forwardIdx = possibleIndices.find(idx => idx >= busState.lastIndex);
+    if (forwardIdx !== undefined) return forwardIdx;
+  }
+  
+  // If we cannot reliably resolve (and there's no state or we are past all), do not invent
+  return -1;
+}
+
 // --- TIME & SCHEDULE UTILITIES ---
 function parseTimeStr(timeStr, baseDate) {
   if (!timeStr) return null;
   const [h, m] = timeStr.split(':').map(Number);
   const d = new Date(baseDate);
-  d.setHours(h, m, 0, 0);
+  // Handle extended hours (e.g. 24:30 or 25:00 for past midnight)
+  if (h >= 24) {
+    d.setHours(h - 24, m, 0, 0);
+    d.setDate(d.getDate() + 1);
+  } else {
+    d.setHours(h, m, 0, 0);
+  }
   return d;
 }
 
@@ -64,18 +102,29 @@ export function getScheduledTimeDiff(lineSched, fromIdx, toIdx, date = new Date(
   
   const tripIdx = findActiveTripIndexForStop(lineSched, fromIdx, expectedTimeMs, date);
   if (tripIdx === -1) return null;
-
-  // We need to trace the time from `fromIdx` to `toIdx`. 
-  // It's possible the active trip has nulls.
-  // A robust way is to just find the difference in minutes between the two stops in ANY valid column if the current one has nulls.
   
   const tryGetDiff = (colIdx) => {
     let t1 = lineSched.stops[fromIdx]?.tripTimes?.[colIdx];
     let t2 = lineSched.stops[toIdx]?.tripTimes?.[colIdx];
+    
+    // If wrap-around (toIdx < fromIdx) and we're looking at the same column
+    // the target time might actually be in the next column's first elements
     if (t1 && t2) {
-      const d1 = parseTimeStr(t1, date);
-      const d2 = parseTimeStr(t2, date);
-      return Math.round((d2 - d1) / 60000);
+      let d1 = parseTimeStr(t1, date);
+      let d2 = parseTimeStr(t2, date);
+      
+      // If we jumped backward in time on the same column, it's highly likely a data glitch or overnight wrap
+      if (toIdx < fromIdx && d2 < d1) {
+         // Try to use the NEXT trip's time for the destination
+         if (colIdx + 1 < lineSched.stops[toIdx].tripTimes.length) {
+            const nextT2 = lineSched.stops[toIdx].tripTimes[colIdx + 1];
+            if (nextT2) {
+               d2 = parseTimeStr(nextT2, date);
+            }
+         }
+      }
+      
+      return Math.max(0, Math.round((d2 - d1) / 60000));
     }
     return null;
   };
@@ -93,85 +142,45 @@ export function getScheduledTimeDiff(lineSched, fromIdx, toIdx, date = new Date(
 }
 
 // --- INTERPOLATION ENGINE ---
-export function interpolateEtaFromHubs(bus, targetStop, lineCode, hubTraffics, lineSched, allStops = SORIA_ALL_STOPS) {
+export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinutes, lineSched) {
   if (!lineSched || !lineSched.stops) return null;
   
-  const targetIdx = lineSched.stops.findIndex(s => String(s.id || s.num) === String(targetStop.id || targetStop.num));
-  if (targetIdx === -1) return null;
-
-  // 1. Find all hub traffics for THIS bus
-  const busHubTraffics = hubTraffics.filter(ht => ht.bus && ht.bus.idBusSAE === bus.idBusSAE);
-  if (busHubTraffics.length === 0) return null;
-
-  const validEtas = [];
-
-  // 2. Evaluate up to 5 hubs
-  for (const ht of busHubTraffics) {
-    const hubIdx = lineSched.stops.findIndex(s => String(s.id || s.num) === String(ht.hubStopId));
-    if (hubIdx === -1) continue;
-    
-    // Only interpolate if the target is AHEAD of the hub (or it's the exact same stop)
-    if (targetIdx < hubIdx) continue;
-    
-    // Limit to reasonable distance (e.g. 5 stops away) to avoid compounding schedule drift
-    if (targetIdx - hubIdx > 5) continue;
-
-    if (targetIdx === hubIdx) {
-      validEtas.push(Math.max(1, ht.hubMinutes));
-      continue;
-    }
-
-    const expectedTimeMs = Date.now() + ht.hubMinutes * 60000;
-    const timeDiff = getScheduledTimeDiff(lineSched, hubIdx, targetIdx, new Date(), expectedTimeMs);
-    
-    if (timeDiff !== null && timeDiff >= 0) {
-      validEtas.push(Math.max(1, ht.hubMinutes + timeDiff));
-    }
+  if (targetIdx < anchorIdx) {
+     // Handle wrap-around gracefully
+     // We will still compute time diff, getScheduledTimeDiff handles toIdx < fromIdx
   }
 
-  // 3. Combine / Validate ETAs
-  if (validEtas.length === 0) return null;
-  if (validEtas.length === 1) return validEtas[0];
-
-  // If multiple valid references, check for consensus
-  // Sort them to find the median or filter outliers
-  validEtas.sort((a, b) => a - b);
+  const expectedTimeMs = Date.now() + anchorMinutes * 60000;
+  const timeDiff = getScheduledTimeDiff(lineSched, anchorIdx, targetIdx, new Date(), expectedTimeMs);
   
-  const median = validEtas[Math.floor(validEtas.length / 2)];
-  
-  // Filter outliers (more than 5 mins away from median)
-  const consensusEtas = validEtas.filter(e => Math.abs(e - median) < 5);
-  
-  if (consensusEtas.length === 0) return validEtas[0]; // fallback to fastest if all contradict
-  
-  // Average the consensus
-  const sum = consensusEtas.reduce((a, b) => a + b, 0);
-  return Math.round(sum / consensusEtas.length);
+  if (timeDiff !== null && timeDiff >= 0) {
+    return Math.max(1, anchorMinutes + timeDiff);
+  }
+  return null;
 }
 
 // --- GPS FALLBACK ENGINE ---
 function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   if (!lat1 || !lon1 || !lat2 || !lon2) return 999999;
   const R = 6371e3; 
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const f1 = lat1 * Math.PI / 180;
+  const f2 = lat2 * Math.PI / 180;
+  const df = (lat2 - lat1) * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(df / 2) * Math.sin(df / 2) + Math.cos(f1) * Math.cos(f2) * Math.sin(dl / 2) * Math.sin(dl / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
-function findSoriaStopForScheduleStop(schedStop, allStops = SORIA_ALL_STOPS) {
-  return allStops.find(s => String(s.id) === String(schedStop.id || schedStop.num));
-}
-
-function routeDistanceBetweenStops(lineSched, fromIdx, toIdx, allStops = SORIA_ALL_STOPS) {
+function routeDistanceBetweenStops(lineCode, fromIdx, toIdx, allStops = SORIA_ALL_STOPS) {
+  const topology = TOPOLOGY_MAP[lineCode];
+  if (!topology) return 0;
   if (fromIdx >= toIdx) return 0;
+  
   let dist = 0;
   for (let i = fromIdx; i < toIdx; i++) {
-    const s1 = findSoriaStopForScheduleStop(lineSched.stops[i], allStops);
-    const s2 = findSoriaStopForScheduleStop(lineSched.stops[i + 1], allStops);
+    const s1 = allStops.find(s => String(s.id) === String(topology[i]?.id));
+    const s2 = allStops.find(s => String(s.id) === String(topology[i + 1]?.id));
     if (s1 && s2) dist += calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
   }
   return dist;
@@ -182,31 +191,33 @@ export function estimateEtaFromGpsWithDirection(bus, targetStop, lineCode, lineS
   const bLng = parseFloat(bus.longitude ?? bus.lng);
   if (!bLat || !bLng || bLat === 0 || bLng === 0) return null;
 
-  if (!lineSched || !lineSched.stops) return null;
-  const targetIdx = lineSched.stops.findIndex(s => String(s.id || s.num) === String(targetStop.id || targetStop.num));
+  const state = getBusState(bus.idBusSAE);
+  const targetIdx = findTargetIndex(lineCode, targetStop.id, state);
   if (targetIdx === -1) return null;
 
-  const state = getBusState(bus.idBusSAE);
+  const topology = TOPOLOGY_MAP[lineCode];
+  if (!topology) return null;
+
   let bestIdx = -1;
   let minDist = Infinity;
 
-  // Topological search: project onto segments
-  for (let i = 0; i < lineSched.stops.length; i++) {
-    const s = findSoriaStopForScheduleStop(lineSched.stops[i], allStops);
+  for (let i = 0; i < topology.length; i++) {
+    const sId = topology[i].id;
+    if (!sId) continue;
+    const s = allStops.find(st => String(st.id) === String(sId));
     if (!s) continue;
+    
     const dist = calculateDistanceMeters(bLat, bLng, s.lat, s.lng);
     
-    // Penalize backward jumps if state exists
     let penalty = 0;
     if (state) {
       if (i < state.lastIndex) {
-        // Did it wrap around?
-        const isWrapAround = (state.lastIndex > lineSched.stops.length - 3) && (i < 3);
+        const isWrapAround = (state.lastIndex > topology.length - 3) && (i < 3);
         const timeSince = Date.now() - state.timestamp;
         if (!isWrapAround) {
-           penalty = 999999; // Impossible jump backwards
+           penalty = 999999; 
         } else if (timeSince < 30000) {
-           penalty = 999999; // Wrapped around too fast
+           penalty = 999999; 
         }
       }
     }
@@ -220,10 +231,9 @@ export function estimateEtaFromGpsWithDirection(bus, targetStop, lineCode, lineS
 
   if (bestIdx === -1 || targetIdx < bestIdx) return null;
   
-  // Update state tracking
   updateBusState(bus.idBusSAE, bestIdx, bLat, bLng);
 
   const AVG_BUS_SPEED_MPM = 250; 
-  const distBusToTarget = routeDistanceBetweenStops(lineSched, bestIdx, targetIdx, allStops);
+  const distBusToTarget = routeDistanceBetweenStops(lineCode, bestIdx, targetIdx, allStops);
   return Math.max(1, Math.round(distBusToTarget / AVG_BUS_SPEED_MPM));
 }

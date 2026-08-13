@@ -3,12 +3,18 @@ import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 import { findMatchingStopInSchedule, areStopsMatching } from '../utils/stopMatcher';
 import { getLinesForStop } from '../data/transitNetwork';
-import { interpolateEtaFromHubs, estimateEtaFromGpsWithDirection } from './etaEngine';
+import { interpolateEtaFromAnchor, estimateEtaFromGpsWithDirection, findTargetIndex } from './etaEngine';
+import { TOPOLOGY_MAP } from '../data/topologyMap';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 const AVG_BUS_SPEED_MPM = 250;
 
 export const HUB_STOP_IDS = ['1', '89', '3', '75', '85', '62', '5'];
+export const BROKEN_STOPS_BLACKLIST = [
+  '10', '11', '13', '16', '21', '22', '30', '44', '96', '98', 
+  '99', '101', '105', '106', '107', '108', '109', '110', '111', '112', '113'
+];
+
 
 function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
@@ -120,38 +126,7 @@ async function fetchHubTraffics() {
   return results;
 }
 
-function buildEtasFromHubData(hubEntries, targetStop, targetLines) {
-  const now = new Date();
-  const curMin = now.getHours() * 60 + now.getMinutes();
-  const matchingBuses = [];
 
-  const uniqueBusesIds = new Set(hubEntries.map(e => e.bus.idBusSAE));
-  
-  uniqueBusesIds.forEach(idBusSAE => {
-    const entry = hubEntries.find(e => e.bus.idBusSAE === idBusSAE);
-    if (!entry) return;
-    const bus = entry.bus;
-    const lineCode = normalizeLineCode(bus.desBusLine, bus.idBusSAE);
-    if (!targetLines.includes(lineCode)) return;
-
-    const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
-    
-    let mins = interpolateEtaFromHubs(bus, targetStop, lineCode, hubEntries, lineSched);
-    let source = 'interpolated';
-    
-    if (mins === null) {
-      mins = estimateEtaFromGpsWithDirection(bus, targetStop, lineCode, lineSched);
-      source = 'gps';
-    }
-
-    if (mins === null) return;
-
-    matchingBuses.push(buildEtaRecord(bus, lineCode, mins, curMin, source));
-  });
-
-  matchingBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
-  return matchingBuses;
-}
 
 export function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
   const now = new Date();
@@ -198,7 +173,7 @@ export async function fetchStopETAs(stopId, options = {}) {
   const now = new Date();
   const curMin = now.getHours() * 60 + now.getMinutes();
 
-  // 1. Try querying the specific stopId directly
+  // 1. REAL: Try querying the specific stopId directly
   try {
     const proxyEndpoint = `/api/eta?stopId=${encodeURIComponent(stopId)}`;
     const response = await fetch(proxyEndpoint);
@@ -226,31 +201,124 @@ export async function fetchStopETAs(stopId, options = {}) {
       }
     }
   } catch (error) {
-    console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying hub fallback...`, error);
+    console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying interpolation...`, error);
   }
 
   if (directOnly) return [];
 
-  // 2. HUB FALLBACK: derive ETAs from live buses across network hubs
+  // 2. INTERPOLATED: Progressive topological search
+  // We will keep track of buses we found to avoid duplicates
+  const interpolatedBuses = [];
+  const foundBusIds = new Set();
+  const globalInterpolationStart = Date.now();
+  const GLOBAL_TIMEOUT_MS = 3500; // 3.5 seconds global timeout
+  
+  const fetchWithTimeout = async (url, ms) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), ms);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(id);
+      return res;
+    } catch (e) {
+      clearTimeout(id);
+      throw e;
+    }
+  };
+
   try {
-    if (liveBuses && liveBuses.length > 0) {
-      const fromLive = buildEtasFromLiveBuses(liveBuses, targetStop, targetLines);
-      if (fromLive.length > 0) return fromLive;
+    for (const lineCode of targetLines) {
+      const topology = TOPOLOGY_MAP[lineCode];
+      const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+      if (!topology || !lineSched) continue;
+
+      // Find target instances
+      const targetIndices = [];
+      topology.forEach((s, idx) => {
+        if (String(s.id) === String(stopId)) targetIndices.push(idx);
+      });
+
+      for (const targetIdx of targetIndices) {
+        let anchorFound = false;
+        
+        // Progressive backward search up to 6 positions
+        for (let offset = 1; offset <= 6; offset++) {
+          if (Date.now() - globalInterpolationStart > GLOBAL_TIMEOUT_MS) {
+            console.warn(`[TUSoria API] Global interpolation timeout reached for ${stopId}`);
+            break; 
+          }
+
+          let prevIdx = targetIdx - offset;
+          if (prevIdx < 0) {
+             if (lineCode === 'C' || lineCode === 'EX') {
+                prevIdx = topology.length + prevIdx;
+             } else {
+                break;
+             }
+          }
+          
+          const prevStopId = topology[prevIdx]?.id;
+          if (!prevStopId || BROKEN_STOPS_BLACKLIST.includes(String(prevStopId))) {
+             continue; // Skip blacklist and undefined
+          }
+
+          // Query the anchor candidate
+          try {
+            const anchorRes = await fetchWithTimeout(`/api/eta?stopId=${encodeURIComponent(prevStopId)}`, 1500);
+            if (!anchorRes.ok) continue;
+            const anchorData = await anchorRes.json();
+            const rawAnchor = anchorData.jsontraffics2 ? JSON.parse(anchorData.jsontraffics2) : [];
+            
+            // Filter for THIS line specifically
+            const validAnchorBuses = rawAnchor.filter(b => {
+               if (b.desLocalCompany && !b.desLocalCompany.toLowerCase().includes('soria')) return false;
+               const bLine = normalizeLineCode(b.desBusLine, b.idBusSAE);
+               return bLine === lineCode;
+            });
+
+            if (validAnchorBuses.length > 0) {
+               // We found a valid anchor! Calculate interpolated ETAs for each bus found here
+               validAnchorBuses.forEach(b => {
+                 const anchorMins = b.minutesArrive ?? b.minutesRemaining;
+                 if (anchorMins == null) return;
+                 
+                 const busUniqueId = b.idBusSAE || b.idBus;
+                 if (foundBusIds.has(busUniqueId)) return;
+                 
+                 const targetEta = interpolateEtaFromAnchor(b, targetIdx, prevIdx, anchorMins, lineSched);
+                 if (targetEta !== null) {
+                    interpolatedBuses.push(buildEtaRecord(b, lineCode, targetEta, curMin, 'interpolated'));
+                    foundBusIds.add(busUniqueId);
+                 }
+               });
+               
+               anchorFound = true;
+               break; // Stop looking backward for this target instance, we found the anchor!
+            }
+          } catch (err) {
+             // Timeout or network error, just let it continue to the next candidate
+             console.warn(`[TUSoria API] Progressive anchor ${prevStopId} failed, trying next...`);
+          }
+        }
+      }
+    }
+    
+    if (interpolatedBuses.length > 0) {
+      interpolatedBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
+      return interpolatedBuses;
     }
 
-    // If liveBuses was explicitly provided (even if empty) or skipHubs is true, avoid redundant network requests
-    if (options.skipHubs || liveBuses !== null) {
-      return getFallbackETAs(stopId);
-    }
-
-    const hubEntries = await fetchHubTraffics();
-    const fromHubs = buildEtasFromHubData(hubEntries, targetStop, targetLines);
-    if (fromHubs.length > 0) return fromHubs;
   } catch (error) {
-    console.warn('[TUSoria API] Hub fallback failed:', error);
+    console.warn('[TUSoria API] Interpolation fallback failed:', error);
   }
 
-  // 3. Fallback to stop-specific schedule matrix if offline / outside service hours
+  // 3. GPS FALLBACK (If live buses exist but we couldn't interpolate)
+  if (liveBuses && liveBuses.length > 0) {
+    const fromLive = buildEtasFromLiveBuses(liveBuses, targetStop, targetLines);
+    if (fromLive.length > 0) return fromLive;
+  }
+
+  // 4. SCHEDULED FALLBACK
   return getFallbackETAs(stopId);
 }
 
