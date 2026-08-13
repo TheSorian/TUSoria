@@ -285,7 +285,7 @@ export async function fetchStopETAs(stopId, options = {}) {
                  const busUniqueId = b.idBusSAE || b.idBus;
                  if (foundBusIds.has(busUniqueId)) return;
                  
-                 const targetEta = interpolateEtaFromAnchor(b, targetIdx, prevIdx, anchorMins, lineSched);
+                 const targetEta = interpolateEtaFromAnchor(b, targetIdx, prevIdx, anchorMins, lineCode);
                  if (targetEta !== null) {
                     interpolatedBuses.push(buildEtaRecord(b, lineCode, targetEta, curMin, 'interpolated'));
                     foundBusIds.add(busUniqueId);

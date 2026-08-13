@@ -142,21 +142,11 @@ export function getScheduledTimeDiff(lineSched, fromIdx, toIdx, date = new Date(
 }
 
 // --- INTERPOLATION ENGINE ---
-export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinutes, lineSched) {
-  if (!lineSched || !lineSched.stops) return null;
-  
-  if (targetIdx < anchorIdx) {
-     // Handle wrap-around gracefully
-     // We will still compute time diff, getScheduledTimeDiff handles toIdx < fromIdx
-  }
-
-  const expectedTimeMs = Date.now() + anchorMinutes * 60000;
-  const timeDiff = getScheduledTimeDiff(lineSched, anchorIdx, targetIdx, new Date(), expectedTimeMs);
-  
-  if (timeDiff !== null && timeDiff >= 0) {
-    return Math.max(1, anchorMinutes + timeDiff);
-  }
-  return null;
+export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinutes, lineCode) {
+  const dist = routeDistanceBetweenStops(lineCode, anchorIdx, targetIdx);
+  const AVG_BUS_SPEED_MPM = 250; // 15 km/h
+  const travelMins = Math.round(dist / AVG_BUS_SPEED_MPM);
+  return Math.max(1, anchorMinutes + travelMins);
 }
 
 // --- GPS FALLBACK ENGINE ---
@@ -172,16 +162,32 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-function routeDistanceBetweenStops(lineCode, fromIdx, toIdx, allStops = SORIA_ALL_STOPS) {
+export function routeDistanceBetweenStops(lineCode, fromIdx, toIdx, allStops = SORIA_ALL_STOPS) {
   const topology = TOPOLOGY_MAP[lineCode];
   if (!topology) return 0;
-  if (fromIdx >= toIdx) return 0;
+  if (fromIdx === toIdx) return 0;
   
   let dist = 0;
-  for (let i = fromIdx; i < toIdx; i++) {
-    const s1 = allStops.find(s => String(s.id) === String(topology[i]?.id));
-    const s2 = allStops.find(s => String(s.id) === String(topology[i + 1]?.id));
-    if (s1 && s2) dist += calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
+  let curr = fromIdx;
+  let maxIter = topology.length; // safety limit
+  
+  while (curr !== toIdx && maxIter-- > 0) {
+    let next = curr + 1;
+    if (next >= topology.length) {
+      if (lineCode === 'C' || lineCode === 'EX') {
+        next = 0; // Wrap around for circular lines
+      } else {
+        break; // Stop if not circular
+      }
+    }
+    
+    const s1 = allStops.find(s => String(s.id) === String(topology[curr]?.id));
+    const s2 = allStops.find(s => String(s.id) === String(topology[next]?.id));
+    if (s1 && s2) {
+      dist += calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
+    }
+    
+    curr = next;
   }
   return dist;
 }
