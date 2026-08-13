@@ -2,6 +2,8 @@ import { SERVICE_ALERTS } from '../data/provisionalStops';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 import { findMatchingStopInSchedule, areStopsMatching } from '../utils/stopMatcher';
+import { getLinesForStop } from '../data/transitNetwork';
+import { interpolateEtaFromHubs, estimateEtaFromGpsWithDirection } from './etaEngine';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 const AVG_BUS_SPEED_MPM = 250;
@@ -76,43 +78,7 @@ function routeDistanceBetweenStops(lineSched, fromIdx, toIdx) {
   return dist;
 }
 
-function estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinutes) {
-  const bLat = parseFloat(bus.latitude ?? bus.lat);
-  const bLng = parseFloat(bus.longitude ?? bus.lng);
-  if (!bLat || !bLng || bLat === 0 || bLng === 0) return null;
 
-  const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
-  if (!lineSched?.stops) return null;
-
-  const closestIdx = findClosestStopIdx(lineSched, bLat, bLng);
-  const targetIdx = scheduleStopIndex(lineSched, targetStop);
-  if (closestIdx === -1 || targetIdx === -1 || targetIdx < closestIdx) return null;
-
-  if (String(targetStop.id) === String(hubStopId) && hubMinutes != null) {
-    return Math.max(1, hubMinutes);
-  }
-
-  const hubStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(hubStopId));
-  const hubIdx = hubStop ? scheduleStopIndex(lineSched, hubStop) : -1;
-  const distBusToTarget = routeDistanceBetweenStops(lineSched, closestIdx, targetIdx);
-
-  if (hubMinutes != null && hubIdx !== -1) {
-    if (targetIdx === hubIdx) return Math.max(1, hubMinutes);
-
-    const distBusToHub = routeDistanceBetweenStops(lineSched, closestIdx, hubIdx);
-
-    if (targetIdx > hubIdx && hubIdx >= closestIdx) {
-      const distHubToTarget = routeDistanceBetweenStops(lineSched, hubIdx, targetIdx);
-      return Math.max(1, hubMinutes + Math.round(distHubToTarget / AVG_BUS_SPEED_MPM));
-    }
-
-    if (targetIdx <= hubIdx && targetIdx >= closestIdx && distBusToHub > 0) {
-      return Math.max(1, Math.round(hubMinutes * (distBusToTarget / distBusToHub)));
-    }
-  }
-
-  return Math.max(1, Math.round(distBusToTarget / AVG_BUS_SPEED_MPM));
-}
 
 function buildEtaRecord(bus, lineCode, mins, curMin, etaSource) {
   return {
@@ -159,31 +125,35 @@ function buildEtasFromHubData(hubEntries, targetStop, targetLines) {
   const curMin = now.getHours() * 60 + now.getMinutes();
   const matchingBuses = [];
 
-  hubEntries.forEach(({ bus, hubStopId, hubMinutes }) => {
+  const uniqueBusesIds = new Set(hubEntries.map(e => e.bus.idBusSAE));
+  
+  uniqueBusesIds.forEach(idBusSAE => {
+    const entry = hubEntries.find(e => e.bus.idBusSAE === idBusSAE);
+    if (!entry) return;
+    const bus = entry.bus;
     const lineCode = normalizeLineCode(bus.desBusLine, bus.idBusSAE);
     if (!targetLines.includes(lineCode)) return;
 
-    const mins = estimateEtaFromGpsAndHub(bus, targetStop, lineCode, hubStopId, hubMinutes);
+    const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+    
+    let mins = interpolateEtaFromHubs(bus, targetStop, lineCode, hubEntries, lineSched);
+    let source = 'interpolated';
+    
+    if (mins === null) {
+      mins = estimateEtaFromGpsWithDirection(bus, targetStop, lineCode, lineSched);
+      source = 'gps';
+    }
+
     if (mins === null) return;
 
-    matchingBuses.push(buildEtaRecord(bus, lineCode, mins, curMin, 'interpolated'));
+    matchingBuses.push(buildEtaRecord(bus, lineCode, mins, curMin, source));
   });
 
-  const uniqueBuses = [];
-  const seen = new Set();
-  matchingBuses.forEach(b => {
-    const key = `${b.desBusLine}-${b.idBus || ''}-${b.minutesArrive}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      uniqueBuses.push(b);
-    }
-  });
-
-  uniqueBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
-  return uniqueBuses;
+  matchingBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
+  return matchingBuses;
 }
 
-function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
+export function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
   const now = new Date();
   const curMin = now.getHours() * 60 + now.getMinutes();
   const matchingBuses = [];
@@ -194,46 +164,35 @@ function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
     const bus = {
       latitude: lb.lat,
       longitude: lb.lng,
+      idBusSAE: lb.rawId || 'unknown',
       idBus: lb.rawId,
       lat: lb.lat,
       lng: lb.lng
     };
-    const mins = estimateEtaFromGpsAndHub(
-      bus,
-      targetStop,
-      lb.line,
-      lb.sourceHubId,
-      lb.hubMinutes ?? lb.minutes
-    );
+    
+    const lineSched = AVANZA_FULL_SCHEDULES[lb.line];
+    
+    // We don't have hub entries here, so we only use GPS fallback
+    const mins = estimateEtaFromGpsWithDirection(bus, targetStop, lb.line, lineSched);
     if (mins === null) return;
 
-    matchingBuses.push(buildEtaRecord(bus, lb.line, mins, curMin, 'interpolated'));
+    matchingBuses.push(buildEtaRecord(bus, lb.line, mins, curMin, 'gps'));
   });
 
-  const uniqueBuses = [];
-  const seen = new Set();
-  matchingBuses.forEach(b => {
-    const key = `${b.desBusLine}-${b.idBus || ''}-${b.minutesArrive}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      uniqueBuses.push(b);
-    }
-  });
-
-  uniqueBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
-  return uniqueBuses;
+  matchingBuses.sort((a, b) => a.minutesArrive - b.minutesArrive);
+  return matchingBuses;
 }
 
 /**
  * Fetch real-time arrivals for a specific stop ID in Soria
  */
 export async function fetchStopETAs(stopId, options = {}) {
-  const { liveBuses = null } = options;
+  const { liveBuses = null, directOnly = false } = options;
   const targetStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
   const targetLines = targetStop ? targetStop.lines.filter(l => l !== 'LC') : [];
 
   if (!targetStop || targetLines.length === 0) {
-    return getFallbackETAs(stopId);
+    return directOnly ? [] : getFallbackETAs(stopId);
   }
 
   const now = new Date();
@@ -269,6 +228,8 @@ export async function fetchStopETAs(stopId, options = {}) {
   } catch (error) {
     console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying hub fallback...`, error);
   }
+
+  if (directOnly) return [];
 
   // 2. HUB FALLBACK: derive ETAs from live buses across network hubs
   try {

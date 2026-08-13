@@ -22,7 +22,7 @@ export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 /**
  * Get next departure time and waiting minutes based on official schedules and real-time SAE API
  */
-export async function getNextDepartureInfo(lineCode, stopId, stopName) {
+export async function getNextDepartureInfo(lineCode, stopId, stopName, getStopETAs = null) {
   const now = new Date();
   if (!isLineActiveToday(lineCode, now)) {
     return {
@@ -35,7 +35,13 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName) {
   }
   // 1. Try real-time SAE API first
   try {
-    const etas = await fetchStopETAs(stopId);
+    let etas = [];
+    if (getStopETAs) {
+      etas = await getStopETAs(stopId);
+    } else {
+      etas = await fetchStopETAs(stopId);
+    }
+    
     if (etas && etas.length > 0) {
       const matchingBus = etas.find(b => b.lineCode === lineCode || b.desBusLine === lineCode);
       const waitMinutes = matchingBus?.minutesArrive ?? matchingBus?.minutesRemaining;
@@ -302,7 +308,7 @@ export async function getAutocompleteSuggestions(query) {
 /**
  * Robust Route Planner supporting direct lines and up to 1 transfer
  */
-export async function planAddressRoute(originQuery, destQuery, userLocation = null) {
+export async function planAddressRoute(originQuery, destQuery, userLocation = null, getStopETAs = null) {
   const originGeo = typeof originQuery === 'object' && originQuery.lat 
     ? originQuery 
     : (await geocodeQuery(originQuery, userLocation) || { name: originQuery || 'Origen', lat: 41.7638, lng: -2.4687 });
@@ -369,7 +375,7 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
     const lineInfo = SORIA_LINES.find(l => l.code === route.lineCode);
     const hasRoadworks = false;
     
-    const depInfo = await getNextDepartureInfo(route.lineCode, route.oStop.id, route.oStop.name);
+    const depInfo = await getNextDepartureInfo(route.lineCode, route.oStop.id, route.oStop.name, getStopETAs);
     
     const walk1Min = Math.max(1, Math.round(route.oStop.dist / 70));
     const walk2Min = Math.max(1, Math.round(route.dStop.dist / 70));
