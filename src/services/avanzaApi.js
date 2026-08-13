@@ -239,22 +239,32 @@ export async function fetchStopETAs(stopId, options = {}) {
           if (match) {
               const targetSchedIdx = lineSched.stops.indexOf(match);
               provTripIdx = findActiveTripIndexForStop(lineSched, targetSchedIdx, Date.now(), new Date());
-              
-              if (provTripIdx !== -1) {
-                  const targetTime = lineSched.stops[targetSchedIdx].tripTimes[provTripIdx];
-                  if (targetTime === null || targetTime === '') {
-                      continue; 
-                  }
-              }
+              // We removed the targetTime === null check because the provisional trip index
+              // should not abort the search. The fallback logic will handle it if the stop is missing.
           }
       }
       
-      const provTopology = getEffectiveTopology(lineCode, provTripIdx, lineSched);
+      let provTopology = getEffectiveTopology(lineCode, provTripIdx, lineSched);
 
-      const targetIndices = [];
+      let targetIndices = [];
       provTopology.forEach((s, idx) => {
         if (String(s.id) === String(stopId)) targetIndices.push(idx);
       });
+
+      if (targetIndices.length === 0 && lineSched && soriaTargetStop) {
+         const match = findMatchingStopInSchedule(lineSched.stops, soriaTargetStop);
+         if (match) {
+            const targetSchedIdx = lineSched.stops.indexOf(match);
+            const altTripIdx = findActiveTripIndexForStop(lineSched, targetSchedIdx, Date.now(), new Date());
+            if (altTripIdx !== -1 && altTripIdx !== provTripIdx) {
+               provTripIdx = altTripIdx;
+               provTopology = getEffectiveTopology(lineCode, provTripIdx, lineSched);
+               provTopology.forEach((s, idx) => {
+                 if (String(s.id) === String(stopId)) targetIndices.push(idx);
+               });
+            }
+         }
+      }
 
       for (const targetIdx of targetIndices) {
         let anchorFound = false;
