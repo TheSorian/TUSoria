@@ -1,5 +1,7 @@
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData.js';
 import { TOPOLOGY_MAP } from '../data/topologyMap.js';
+import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules.js';
+import { findMatchingStopInSchedule } from '../utils/stopMatcher.js';
 
 // --- STATE MANAGEMENT ---
 export const _busStateMap = new Map();
@@ -141,8 +143,42 @@ export function getScheduledTimeDiff(lineSched, fromIdx, toIdx, date = new Date(
   return null;
 }
 
-// --- INTERPOLATION ENGINE ---
 export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinutes, lineCode) {
+  const topology = TOPOLOGY_MAP[lineCode];
+  const targetStopId = topology[targetIdx]?.id;
+  const anchorStopId = topology[anchorIdx]?.id;
+  const targetSoriaStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(targetStopId));
+  const anchorSoriaStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(anchorStopId));
+  const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+
+  if (lineSched && lineSched.stops && targetSoriaStop && anchorSoriaStop) {
+    const matchTarget = findMatchingStopInSchedule(lineSched.stops, targetSoriaStop);
+    const matchAnchor = findMatchingStopInSchedule(lineSched.stops, anchorSoriaStop);
+    
+    if (matchTarget && matchAnchor) {
+       const targetSchedIdx = lineSched.stops.indexOf(matchTarget);
+       const anchorSchedIdx = lineSched.stops.indexOf(matchAnchor);
+       
+       if (targetSchedIdx !== -1 && anchorSchedIdx !== -1) {
+          const expectedTimeMs = Date.now() + anchorMinutes * 60000;
+          
+          const tripIdx = findActiveTripIndexForStop(lineSched, anchorSchedIdx, expectedTimeMs, new Date());
+          if (tripIdx !== -1) {
+             const targetTime = lineSched.stops[targetSchedIdx].tripTimes[tripIdx];
+             if (targetTime === null || targetTime === '') {
+                 return null; // Stop is skipped on this trip
+             }
+          }
+
+          const timeDiff = getScheduledTimeDiff(lineSched, anchorSchedIdx, targetSchedIdx, new Date(), expectedTimeMs);
+          if (timeDiff !== null && timeDiff >= 0) {
+             return Math.max(1, anchorMinutes + timeDiff);
+          }
+       }
+    }
+  }
+
+  // Fallback to spatial distance if schedule diff is unavailable (e.g. missing times)
   const dist = routeDistanceBetweenStops(lineCode, anchorIdx, targetIdx);
   const AVG_BUS_SPEED_MPM = 250; // 15 km/h
   const travelMins = Math.round(dist / AVG_BUS_SPEED_MPM);
