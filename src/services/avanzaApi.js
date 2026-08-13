@@ -3,7 +3,7 @@ import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
 import { findMatchingStopInSchedule, areStopsMatching } from '../utils/stopMatcher';
 import { getLinesForStop } from '../data/transitNetwork';
-import { interpolateEtaFromAnchor, estimateEtaFromGpsWithDirection, findTargetIndex } from './etaEngine';
+import { interpolateEtaFromAnchor, estimateEtaFromGpsWithDirection, findTargetIndex, findActiveTripIndexForStop, getEffectiveTopology } from './etaEngine';
 import { TOPOLOGY_MAP } from '../data/topologyMap';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
@@ -232,16 +232,33 @@ export async function fetchStopETAs(stopId, options = {}) {
       const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
       if (!topology || !lineSched) continue;
 
-      // Find target instances
+      const soriaTargetStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
+      let provTripIdx = -1;
+      if (lineSched && soriaTargetStop) {
+          const match = findMatchingStopInSchedule(lineSched.stops, soriaTargetStop);
+          if (match) {
+              const targetSchedIdx = lineSched.stops.indexOf(match);
+              provTripIdx = findActiveTripIndexForStop(lineSched, targetSchedIdx, Date.now(), new Date());
+              
+              if (provTripIdx !== -1) {
+                  const targetTime = lineSched.stops[targetSchedIdx].tripTimes[provTripIdx];
+                  if (targetTime === null || targetTime === '') {
+                      continue; 
+                  }
+              }
+          }
+      }
+      
+      const provTopology = getEffectiveTopology(lineCode, provTripIdx, lineSched);
+
       const targetIndices = [];
-      topology.forEach((s, idx) => {
+      provTopology.forEach((s, idx) => {
         if (String(s.id) === String(stopId)) targetIndices.push(idx);
       });
 
       for (const targetIdx of targetIndices) {
         let anchorFound = false;
         
-        // Progressive backward search up to 6 positions
         for (let offset = 1; offset <= 6; offset++) {
           if (Date.now() - globalInterpolationStart > GLOBAL_TIMEOUT_MS) {
             console.warn(`[TUSoria API] Global interpolation timeout reached for ${stopId}`);
@@ -251,25 +268,23 @@ export async function fetchStopETAs(stopId, options = {}) {
           let prevIdx = targetIdx - offset;
           if (prevIdx < 0) {
              if (lineCode === 'C' || lineCode === 'EX') {
-                prevIdx = topology.length + prevIdx;
+                prevIdx = provTopology.length + prevIdx;
              } else {
                 break;
              }
           }
           
-          const prevStopId = topology[prevIdx]?.id;
+          const prevStopId = provTopology[prevIdx]?.id;
           if (!prevStopId || BROKEN_STOPS_BLACKLIST.includes(String(prevStopId))) {
-             continue; // Skip blacklist and undefined
+             continue; 
           }
 
-          // Query the anchor candidate
           try {
             const anchorRes = await fetchWithTimeout(`/api/eta?stopId=${encodeURIComponent(prevStopId)}`, 1500);
             if (!anchorRes.ok) continue;
             const anchorData = await anchorRes.json();
             const rawAnchor = anchorData.jsontraffics2 ? JSON.parse(anchorData.jsontraffics2) : [];
             
-            // Filter for THIS line specifically
             const validAnchorBuses = rawAnchor.filter(b => {
                if (b.desLocalCompany && !b.desLocalCompany.toLowerCase().includes('soria')) return false;
                const bLine = normalizeLineCode(b.desBusLine, b.idBusSAE);
@@ -277,7 +292,6 @@ export async function fetchStopETAs(stopId, options = {}) {
             });
 
             if (validAnchorBuses.length > 0) {
-               // We found a valid anchor! Calculate interpolated ETAs for each bus found here
                validAnchorBuses.forEach(b => {
                  const anchorMins = b.minutesArrive ?? b.minutesRemaining;
                  if (anchorMins == null) return;
@@ -285,18 +299,36 @@ export async function fetchStopETAs(stopId, options = {}) {
                  const busUniqueId = b.idBusSAE || b.idBus;
                  if (foundBusIds.has(busUniqueId)) return;
                  
-                 const targetEta = interpolateEtaFromAnchor(b, targetIdx, prevIdx, anchorMins, lineCode);
-                 if (targetEta !== null) {
-                    interpolatedBuses.push(buildEtaRecord(b, lineCode, targetEta, curMin, 'interpolated'));
-                    foundBusIds.add(busUniqueId);
+                 let defTripIdx = provTripIdx;
+                 const anchorSoriaStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(prevStopId));
+                 if (lineSched && anchorSoriaStop) {
+                    const anchorMatch = findMatchingStopInSchedule(lineSched.stops, anchorSoriaStop);
+                    if (anchorMatch) {
+                       const anchorSchedIdx = lineSched.stops.indexOf(anchorMatch);
+                       const realETA = Date.now() + anchorMins * 60000;
+                       defTripIdx = findActiveTripIndexForStop(lineSched, anchorSchedIdx, realETA, new Date());
+                    }
+                 }
+                 
+                 if (defTripIdx === -1) return;
+                 
+                 const defTopology = getEffectiveTopology(lineCode, defTripIdx, lineSched);
+                 const defTargetIdx = defTopology.findIndex(s => String(s.id) === String(stopId));
+                 const defAnchorIdx = defTopology.findIndex(s => String(s.id) === String(prevStopId));
+                 
+                 if (defTargetIdx !== -1 && defAnchorIdx !== -1) {
+                    const targetEta = interpolateEtaFromAnchor(b, defTargetIdx, defAnchorIdx, anchorMins, lineCode, defTopology);
+                    if (targetEta !== null) {
+                       interpolatedBuses.push(buildEtaRecord(b, lineCode, targetEta, curMin, 'interpolated'));
+                       foundBusIds.add(busUniqueId);
+                    }
                  }
                });
                
                anchorFound = true;
-               break; // Stop looking backward for this target instance, we found the anchor!
+               break; 
             }
           } catch (err) {
-             // Timeout or network error, just let it continue to the next candidate
              console.warn(`[TUSoria API] Progressive anchor ${prevStopId} failed, trying next...`);
           }
         }

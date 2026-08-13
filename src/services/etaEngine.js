@@ -143,8 +143,28 @@ export function getScheduledTimeDiff(lineSched, fromIdx, toIdx, date = new Date(
   return null;
 }
 
-export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinutes, lineCode) {
+export function getEffectiveTopology(lineCode, tripIdx, lineSched = null) {
   const topology = TOPOLOGY_MAP[lineCode];
+  if (!topology) return [];
+  if (tripIdx === -1 || !lineSched) return topology;
+
+  return topology.filter(stopNode => {
+    const soriaStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopNode.id));
+    if (!soriaStop) return true; // Keep if unknown
+    
+    const match = findMatchingStopInSchedule(lineSched.stops, soriaStop);
+    if (!match) return true; // Keep if not found in schedule
+
+    const schedIdx = lineSched.stops.indexOf(match);
+    if (schedIdx === -1) return true;
+
+    const tripTime = lineSched.stops[schedIdx].tripTimes[tripIdx];
+    return tripTime !== null && tripTime !== ''; 
+  });
+}
+
+export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinutes, lineCode, customTopology = null) {
+  const topology = customTopology || TOPOLOGY_MAP[lineCode];
   const targetStopId = topology[targetIdx]?.id;
   const anchorStopId = topology[anchorIdx]?.id;
   const targetSoriaStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(targetStopId));
@@ -179,7 +199,7 @@ export function interpolateEtaFromAnchor(bus, targetIdx, anchorIdx, anchorMinute
   }
 
   // Fallback to spatial distance if schedule diff is unavailable (e.g. missing times)
-  const dist = routeDistanceBetweenStops(lineCode, anchorIdx, targetIdx);
+  const dist = routeDistanceBetweenStops(lineCode, anchorIdx, targetIdx, SORIA_ALL_STOPS, topology);
   const AVG_BUS_SPEED_MPM = 250; // 15 km/h
   const travelMins = Math.round(dist / AVG_BUS_SPEED_MPM);
   return Math.max(1, anchorMinutes + travelMins);
@@ -198,8 +218,8 @@ function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-export function routeDistanceBetweenStops(lineCode, fromIdx, toIdx, allStops = SORIA_ALL_STOPS) {
-  const topology = TOPOLOGY_MAP[lineCode];
+export function routeDistanceBetweenStops(lineCode, fromIdx, toIdx, allStops = SORIA_ALL_STOPS, customTopology = null) {
+  const topology = customTopology || TOPOLOGY_MAP[lineCode];
   if (!topology) return 0;
   if (fromIdx === toIdx) return 0;
   
