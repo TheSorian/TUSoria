@@ -11,23 +11,40 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>TUSoria — Transporte Urbano de Soria en Tiempo Real</title>
     <script>
-      // Single-shot recovery if an old ServiceWorker cached broken JS asset hashes
-      window.addEventListener('error', function(e) {
-        if (e && e.filename && e.filename.includes('/assets/') && !sessionStorage.getItem('tusoria_sw_recovered')) {
-          sessionStorage.setItem('tusoria_sw_recovered', '1');
+      // Safe single-shot recovery from stale ServiceWorker cache.
+      // Uses sessionStorage to guarantee at most ONE recovery reload per session.
+      (function() {
+        var RECOVERED_KEY = 'tusoria_sw_recovered';
+        function nukeSW() {
           if ('serviceWorker' in navigator) {
             navigator.serviceWorker.getRegistrations().then(function(regs) {
-              for (let reg of regs) reg.unregister();
+              for (var i = 0; i < regs.length; i++) regs[i].unregister();
             });
           }
           if ('caches' in window) {
             caches.keys().then(function(keys) {
-              for (let key of keys) caches.delete(key);
+              for (var i = 0; i < keys.length; i++) caches.delete(keys[i]);
             });
           }
-          window.location.reload();
         }
-      });
+        // 1. If an asset fails to load (hash mismatch from stale cache)
+        window.addEventListener('error', function(e) {
+          if (e && e.filename && e.filename.includes('/assets/') && !sessionStorage.getItem(RECOVERED_KEY)) {
+            sessionStorage.setItem(RECOVERED_KEY, '1');
+            nukeSW();
+            window.location.reload();
+          }
+        });
+        // 2. If React hasn't mounted after 4 seconds (SW served stale HTML)
+        setTimeout(function() {
+          var root = document.getElementById('root');
+          if (root && root.children.length === 0 && !sessionStorage.getItem(RECOVERED_KEY)) {
+            sessionStorage.setItem(RECOVERED_KEY, '1');
+            nukeSW();
+            window.location.reload();
+          }
+        }, 4000);
+      })();
     </script>
   </head>
   <body>
