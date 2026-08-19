@@ -17,9 +17,6 @@ const LINE_COLORS = {
   'LC': '#d4af37'
 };
 
-const CALAVERON_STOP_IDS = ['11', '14'];
-const POLIGONO_STOP_IDS = ['79', '77', '75', '74', '76', '78', '80', '23'];
-
 function findClosestPointIndex(coords, point) {
   if (!coords || !point) return 0;
   let minD = Infinity;
@@ -442,10 +439,6 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
       if (selectedLineFilter && !stop.lines.includes(selectedLineFilter)) return;
       
       const isLcStop = stop.lines.includes('LC');
-      const isCalaveronStop = CALAVERON_STOP_IDS.includes(String(stop.id));
-      const isPoligonoExtensionStop = POLIGONO_STOP_IDS.includes(String(stop.id));
-      const isExtensionStop = isCalaveronStop || isPoligonoExtensionStop;
-
       const bgColor = isLcStop ? '#d4af37' : '#1a4b8c';
       
       const busSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="3" rx="3"/><path d="M4 11h16"/><path d="M8 6v5"/><path d="M16 6v5"/><path d="M8 15h.01"/><path d="M16 15h.01"/><path d="M6 19v2"/><path d="M18 19v2"/></svg>`;
@@ -666,7 +659,9 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
       if (boundsPoints.length > 0) {
         try {
           map.fitBounds(boundsPoints, { padding: [60, 60] });
-        } catch (e) {}
+        } catch (_err) {
+          // ignore fitBounds on unmounted map
+        }
       }
     }
     
