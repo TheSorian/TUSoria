@@ -1,10 +1,13 @@
 import { SORIA_KEY_PLACES, SORIA_LINES } from '../data/soriaLines';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
+import { TOPOLOGY_MAP } from '../data/topologyMap';
 import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 import { fetchStopETAs, isLineActiveToday } from './avanzaApi';
+import { routeDistanceBetweenStops } from './etaEngine';
 
 export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  if (lat1 == null || lon1 == null || lat2 == null || lon2 == null) return 999999;
   const R = 6371e3;
   const φ1 = (lat1 * Math.PI) / 180;
   const φ2 = (lat2 * Math.PI) / 180;
@@ -20,48 +23,214 @@ export function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
 }
 
 /**
+ * Checks if toStopId is reachable from fromStopId in lineCode according to its topology and direction of travel.
+ */
+export function isTopologicallyReachable(lineCode, fromStopId, toStopId) {
+  if (String(fromStopId) === String(toStopId)) {
+    return { reachable: false, fromIdx: -1, toIdx: -1, stopsCount: 0 };
+  }
+
+  // 1. External Line (LC - Camaretas)
+  if (lineCode === 'LC') {
+    const lcForward = ['LC_CIVICO', 'LC_CC', 'LC_ESTACION', 'LC_DUQUES'];
+    const lcReverse = ['LC_DUQUES', 'LC_ESTACION', 'LC_CC', 'LC_CIVICO'];
+
+    const checkOrder = (ids) => {
+      const i1 = ids.indexOf(String(fromStopId));
+      const i2 = ids.indexOf(String(toStopId));
+      if (i1 !== -1 && i2 !== -1 && i1 < i2) {
+        return { reachable: true, fromIdx: i1, toIdx: i2, stopsCount: i2 - i1 };
+      }
+      return null;
+    };
+
+    const cToS = checkOrder(lcForward);
+    if (cToS) return cToS;
+    const sToC = checkOrder(lcReverse);
+    if (sToC) return sToC;
+
+    return { reachable: false, fromIdx: -1, toIdx: -1, stopsCount: 0 };
+  }
+
+  // 2. Urban Lines
+  const topology = TOPOLOGY_MAP[lineCode];
+  if (!topology || topology.length === 0) {
+    return { reachable: false, fromIdx: -1, toIdx: -1, stopsCount: 0 };
+  }
+
+  const fromIndices = [];
+  const toIndices = [];
+
+  topology.forEach((node, idx) => {
+    if (String(node.id) === String(fromStopId)) fromIndices.push(idx);
+    if (String(node.id) === String(toStopId)) toIndices.push(idx);
+  });
+
+  if (fromIndices.length === 0 || toIndices.length === 0) {
+    return { reachable: false, fromIdx: -1, toIdx: -1, stopsCount: 0 };
+  }
+
+  const isCircular = lineCode === 'C' || lineCode === 'EX';
+  let bestCandidate = null;
+  let minStops = Infinity;
+
+  for (const fIdx of fromIndices) {
+    for (const tIdx of toIndices) {
+      if (fIdx < tIdx) {
+        const count = tIdx - fIdx;
+        if (count < minStops) {
+          minStops = count;
+          bestCandidate = { reachable: true, fromIdx: fIdx, toIdx: tIdx, stopsCount: count };
+        }
+      } else if (isCircular && fIdx > tIdx) {
+        const count = topology.length - fIdx + tIdx;
+        if (count < minStops) {
+          minStops = count;
+          bestCandidate = { reachable: true, fromIdx: fIdx, toIdx: tIdx, stopsCount: count };
+        }
+      }
+    }
+  }
+
+  if (bestCandidate) return bestCandidate;
+  return { reachable: false, fromIdx: -1, toIdx: -1, stopsCount: 0 };
+}
+
+/**
+ * Calculates in-bus transit time in minutes along the topological sequence between two stops.
+ */
+export function calculateTransitTimeMin(lineCode, fromStopId, toStopId, departureTimeMinutes = null, date = new Date()) {
+  const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
+  const s1 = SORIA_ALL_STOPS.find(s => String(s.id) === String(fromStopId));
+  const s2 = SORIA_ALL_STOPS.find(s => String(s.id) === String(toStopId));
+
+  // 1. Try Schedule Matrix Difference
+  if (lineSched && lineSched.stops && s1 && s2) {
+    const match1 = findMatchingStopInSchedule(lineSched.stops, s1);
+    const match2 = findMatchingStopInSchedule(lineSched.stops, s2);
+
+    if (match1 && match2) {
+      const idx1 = lineSched.stops.indexOf(match1);
+      const idx2 = lineSched.stops.indexOf(match2);
+
+      if (idx1 !== -1 && idx2 !== -1 && idx1 < idx2) {
+        const numTrips = match1.tripTimes.length;
+        const curMin = departureTimeMinutes ?? (date.getHours() * 60 + date.getMinutes());
+
+        let bestTripIdx = -1;
+        let minDiff = Infinity;
+
+        for (let i = 0; i < numTrips; i++) {
+          const tStr1 = match1.tripTimes[i];
+          const tStr2 = match2.tripTimes[i];
+          if (!tStr1 || !tStr2) continue;
+
+          const [h1, m1] = tStr1.split(':').map(Number);
+          const t1 = h1 * 60 + m1;
+          const diff = t1 - curMin;
+
+          if (diff >= 0 && diff < minDiff) {
+            minDiff = diff;
+            bestTripIdx = i;
+          }
+        }
+
+        if (bestTripIdx !== -1) {
+          const [h1, m1] = match1.tripTimes[bestTripIdx].split(':').map(Number);
+          const [h2, m2] = match2.tripTimes[bestTripIdx].split(':').map(Number);
+          const transitTime = (h2 * 60 + m2) - (h1 * 60 + m1);
+          if (transitTime > 0) {
+            return transitTime;
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Spatial / Topological Distance Fallback (250 m/min = 15 km/h average commercial speed)
+  const reach = isTopologicallyReachable(lineCode, fromStopId, toStopId);
+  if (reach.reachable && reach.fromIdx !== -1 && reach.toIdx !== -1) {
+    const dist = routeDistanceBetweenStops(lineCode, reach.fromIdx, reach.toIdx, SORIA_ALL_STOPS);
+    if (dist > 0) {
+      return Math.max(1, Math.round(dist / 250));
+    }
+  }
+
+  // 3. Euclidean Fallback
+  if (s1 && s2) {
+    const d = calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
+    return Math.max(2, Math.round(d / 250));
+  }
+
+  return 3;
+}
+
+/**
  * Get next departure time and waiting minutes based on official schedules and real-time SAE API
  */
-export async function getNextDepartureInfo(lineCode, stopId, stopName, getStopETAs = null) {
-  const now = new Date();
-  if (!isLineActiveToday(lineCode, now)) {
+export async function getNextDepartureInfo(
+  lineCode, 
+  stopId, 
+  stopName, 
+  getStopETAs = null, 
+  minDepartureMinutes = null,
+  date = new Date()
+) {
+  if (!isLineActiveToday(lineCode, date)) {
     return {
       timeStr: 'Sin servicio hoy',
+      formattedTime: 'Sin servicio hoy',
       waitMin: 999,
+      tripMin: 999,
       isRealTime: false,
       isStarred: false,
       label: lineCode === 'C' ? 'Solo domingos y festivos' : 'Sin servicio los domingos'
     };
   }
-  // 1. Try real-time SAE API first
-  try {
-    let etas = [];
-    if (getStopETAs) {
-      etas = await getStopETAs(stopId);
-    } else {
-      etas = await fetchStopETAs(stopId);
-    }
-    
-    if (etas && etas.length > 0) {
-      const matchingBus = etas.find(b => b.lineCode === lineCode || b.desBusLine === lineCode);
-      const waitMinutes = matchingBus?.minutesArrive ?? matchingBus?.minutesRemaining;
-      if (matchingBus && waitMinutes != null) {
-        return {
-          timeStr: `${waitMinutes} min`,
-          waitMin: Math.max(1, waitMinutes),
-          isRealTime: true,
-          isStarred: false,
-          label: `SAE en Vivo (${waitMinutes} min)`
-        };
+
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+  const targetMinMinutes = minDepartureMinutes ?? currentMinutes;
+  const isTargetingNow = Math.abs(targetMinMinutes - currentMinutes) <= 15;
+
+  // 1. Try Real-Time SAE API if departure is near the current moment
+  if (isTargetingNow) {
+    try {
+      let etas = [];
+      if (getStopETAs) {
+        etas = await getStopETAs(stopId);
+      } else {
+        etas = await fetchStopETAs(stopId);
       }
+      
+      if (etas && etas.length > 0) {
+        const matchingBus = etas.find(b => b.lineCode === lineCode || b.desBusLine === lineCode);
+        const waitMinutes = matchingBus?.minutesArrive ?? matchingBus?.minutesRemaining;
+        
+        const passengerWalkDelay = targetMinMinutes - currentMinutes;
+        if (matchingBus && waitMinutes != null && waitMinutes >= passengerWalkDelay) {
+          const netWait = waitMinutes - passengerWalkDelay;
+          const busArrivalMin = currentMinutes + waitMinutes;
+          const h = Math.floor(busArrivalMin / 60) % 24;
+          const m = busArrivalMin % 60;
+          const formattedTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+          return {
+            timeStr: `${waitMinutes} min`,
+            formattedTime,
+            waitMin: Math.max(1, netWait),
+            tripMin: busArrivalMin,
+            isRealTime: true,
+            isStarred: false,
+            label: `SAE en Vivo (${waitMinutes} min)`
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("[TUSoria Router] Could not fetch SAE real-time ETA for route planner", e);
     }
-  } catch (e) {
-    console.warn("Could not fetch SAE real-time ETA for route planner", e);
   }
 
-  // 2. Fallback to Official Avanza Full Timetable Matrix
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-
+  // 2. Query Official Timetable Matrix
   const lineSched = AVANZA_FULL_SCHEDULES[lineCode];
   if (lineSched && lineSched.stops) {
     const matchStop = findMatchingStopInSchedule(lineSched.stops, { id: stopId, name: stopName });
@@ -70,16 +239,18 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName, getStopET
       let bestNext = null;
       let minDiff = Infinity;
       let isStarred = false;
+      let bestTripMin = 0;
 
       matchStop.tripTimes.forEach((tStr, idx) => {
         if (!tStr) return;
         const [h, m] = tStr.split(':').map(Number);
         const tripMin = h * 60 + m;
-        const diff = tripMin - currentMinutes;
+        const diff = tripMin - targetMinMinutes;
 
         if (diff >= 0 && diff < minDiff) {
           minDiff = diff;
           bestNext = tStr;
+          bestTripMin = tripMin;
           const colType = lineSched.colTypes?.[idx] || '';
           isStarred = colType.includes('*');
         }
@@ -88,7 +259,9 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName, getStopET
       if (bestNext) {
         return {
           timeStr: bestNext,
+          formattedTime: bestNext,
           waitMin: minDiff,
+          tripMin: bestTripMin,
           isRealTime: false,
           isStarred,
           label: `Horario oficial: ${bestNext}${isStarred ? ' (*Calaverón/Polígono)' : ''}`
@@ -100,7 +273,9 @@ export async function getNextDepartureInfo(lineCode, stopId, stopName, getStopET
   // Fallback heuristic default
   return {
     timeStr: 'Frecuencia regular',
+    formattedTime: 'Frecuencia regular',
     waitMin: 6,
+    tripMin: targetMinMinutes + 6,
     isRealTime: false,
     isStarred: false,
     label: 'Horario habitual'
@@ -119,20 +294,17 @@ export async function geocodeQuery(query, userLocation = null) {
 
   const clean = String(query).toLowerCase().trim();
 
-  // Use exact GPS if requested or if "mi ubicación"
   if ((clean.includes("mi ubicación") || clean.includes("ubicación actual") || clean.includes("gps")) && userLocation) {
     return { name: "Tu Ubicación Actual", lat: userLocation.lat, lng: userLocation.lng };
   }
 
-  // Check matching key places locally
   const placeMatch = SORIA_KEY_PLACES.find(p => p.name.toLowerCase().includes(clean));
   if (placeMatch) return { name: placeMatch.name, lat: placeMatch.lat, lng: placeMatch.lng };
 
-  // Check matching stops locally
   const stopMatch = SORIA_ALL_STOPS.find(s => s.name.toLowerCase().includes(clean));
   if (stopMatch) return { name: stopMatch.name, lat: stopMatch.lat, lng: stopMatch.lng };
 
-  // 1. Try CartoCiudad (IGN) API
+  // 1. CartoCiudad (IGN)
   try {
     const url = `https://www.cartociudad.es/geocoder/api/geocoder/find?q=${encodeURIComponent(query + ' Soria')}`;
     const response = await fetch(url);
@@ -153,7 +325,7 @@ export async function geocodeQuery(query, userLocation = null) {
     console.warn("CartoCiudad Geocoding failed:", error);
   }
 
-  // 2. Try ArcGIS GeocodeServer API
+  // 2. ArcGIS
   try {
     const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?SingleLine=${encodeURIComponent(query + ' Soria')}&countryCode=ESP&searchExtent=-2.53,41.73,-2.42,41.80&f=json`;
     const response = await fetch(url);
@@ -172,7 +344,7 @@ export async function geocodeQuery(query, userLocation = null) {
     console.warn("ArcGIS Geocoding failed:", error);
   }
 
-  // 3. Fallback: Nominatim API
+  // 3. Nominatim
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&city=Soria&countrycodes=es&limit=1`;
     const response = await fetch(url, { headers: { 'Accept-Language': 'es' }});
@@ -189,7 +361,6 @@ export async function geocodeQuery(query, userLocation = null) {
     console.warn("Nominatim Geocoding failed:", error);
   }
 
-  // Default fallback to center of Soria
   return { name: query, lat: 41.7638, lng: -2.4687 };
 }
 
@@ -208,15 +379,11 @@ export function findNearestStop(lat, lng) {
   return nearest;
 }
 
-/**
- * Combined Autocomplete suggestions: Soria Stops + Key Places + CartoCiudad (IGN) + ArcGIS
- */
 export async function getAutocompleteSuggestions(query) {
   if (!query || query.trim().length < 2) return [];
   const clean = query.toLowerCase().trim();
   const results = [];
 
-  // 1. Local bus stops match
   SORIA_ALL_STOPS.forEach(stop => {
     if (stop.name.toLowerCase().includes(clean) || stop.lines.some(l => l.toLowerCase() === clean)) {
       results.push({
@@ -233,7 +400,6 @@ export async function getAutocompleteSuggestions(query) {
     }
   });
 
-  // 2. Local key places match
   SORIA_KEY_PLACES.forEach(place => {
     if (place.name.toLowerCase().includes(clean)) {
       results.push({
@@ -248,7 +414,6 @@ export async function getAutocompleteSuggestions(query) {
     }
   });
 
-  // 3. Fetch CartoCiudad (IGN) candidates
   try {
     const url = `https://www.cartociudad.es/geocoder/api/geocoder/candidates?q=${encodeURIComponent(query + ' Soria')}&limit=4`;
     const response = await fetch(url);
@@ -274,7 +439,6 @@ export async function getAutocompleteSuggestions(query) {
     console.warn("CartoCiudad autocomplete candidates error:", error);
   }
 
-  // 4. Fetch ArcGIS candidates
   try {
     const url = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/suggest?text=${encodeURIComponent(query + ' Soria')}&searchExtent=-2.53,41.73,-2.42,41.80&countryCode=ESP&f=json`;
     const response = await fetch(url);
@@ -306,9 +470,15 @@ export async function getAutocompleteSuggestions(query) {
 }
 
 /**
- * Robust Route Planner supporting direct lines and up to 1 transfer
+ * Topologically and temporally sound Route Planner supporting direct lines and synchronized transfers.
  */
-export async function planAddressRoute(originQuery, destQuery, userLocation = null, getStopETAs = null) {
+export async function planAddressRoute(
+  originQuery, 
+  destQuery, 
+  userLocation = null, 
+  getStopETAs = null,
+  departureDate = new Date()
+) {
   const originGeo = typeof originQuery === 'object' && originQuery.lat 
     ? originQuery 
     : (await geocodeQuery(originQuery, userLocation) || { name: originQuery || 'Origen', lat: 41.7638, lng: -2.4687 });
@@ -317,9 +487,9 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
     ? destQuery 
     : (await geocodeQuery(destQuery, userLocation) || { name: destQuery || 'Destino', lat: 41.7588, lng: -2.4721 });
 
-  // If origin and destination are extremely close (< 100m), return walking route
   const directDistance = calculateDistanceMeters(originGeo.lat, originGeo.lng, destGeo.lat, destGeo.lng);
-  if (directDistance < 100) {
+  
+  if (directDistance < 250) {
     const walkMin = Math.max(1, Math.round(directDistance / 70));
     return [{
       id: 'direct-walk',
@@ -341,83 +511,100 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
     }];
   }
 
-  // Find origin and destination candidate stops (top 8 nearest within 1500m)
-  let originStops = SORIA_ALL_STOPS.map(s => ({ ...s, dist: calculateDistanceMeters(originGeo.lat, originGeo.lng, s.lat, s.lng) }))
-    .sort((a, b) => a.dist - b.dist).slice(0, 8);
-  
-  let destStops = SORIA_ALL_STOPS.map(s => ({ ...s, dist: calculateDistanceMeters(destGeo.lat, destGeo.lng, s.lat, s.lng) }))
-    .sort((a, b) => a.dist - b.dist).slice(0, 8);
+  const originStops = SORIA_ALL_STOPS.map(s => ({ 
+    ...s, 
+    dist: calculateDistanceMeters(originGeo.lat, originGeo.lng, s.lat, s.lng) 
+  }))
+  .filter(s => s.dist <= 1200)
+  .sort((a, b) => a.dist - b.dist)
+  .slice(0, 6);
+
+  const destStops = SORIA_ALL_STOPS.map(s => ({ 
+    ...s, 
+    dist: calculateDistanceMeters(destGeo.lat, destGeo.lng, s.lat, s.lng) 
+  }))
+  .filter(s => s.dist <= 1200)
+  .sort((a, b) => a.dist - b.dist)
+  .slice(0, 6);
 
   const results = [];
   const maxResults = 3;
+  const nowMin = departureDate.getHours() * 60 + departureDate.getMinutes();
 
   // 1. SEARCH FOR DIRECT ROUTES
-  let directRoutes = [];
-  originStops.forEach(oStop => {
-    destStops.forEach(dStop => {
-      // Find common lines between this origin stop and this destination stop that are active today
-      const commonLines = oStop.lines.filter(line => dStop.lines.includes(line) && isLineActiveToday(line));
-      commonLines.forEach(lineCode => {
-        directRoutes.push({
-          oStop, dStop, lineCode, 
-          walkDistTotal: oStop.dist + dStop.dist,
-          busDist: calculateDistanceMeters(oStop.lat, oStop.lng, dStop.lat, dStop.lng)
+  const directCandidates = [];
+  for (const oStop of originStops) {
+    for (const dStop of destStops) {
+      if (String(oStop.id) === String(dStop.id)) continue;
+
+      const commonLines = oStop.lines.filter(line => dStop.lines.includes(line) && isLineActiveToday(line, departureDate));
+      
+      for (const lineCode of commonLines) {
+        const reach = isTopologicallyReachable(lineCode, oStop.id, dStop.id);
+        if (!reach.reachable) continue;
+
+        directCandidates.push({
+          oStop,
+          dStop,
+          lineCode,
+          reach,
+          walk1Dist: oStop.dist,
+          walk2Dist: dStop.dist
         });
-      });
-    });
-  });
+      }
+    }
+  }
 
-  // Sort by total walking + bus distance approx
-  directRoutes.sort((a, b) => (a.walkDistTotal + a.busDist) - (b.walkDistTotal + b.busDist));
+  directCandidates.sort((a, b) => (a.walk1Dist + a.walk2Dist + a.reach.stopsCount * 300) - (b.walk1Dist + b.walk2Dist + b.reach.stopsCount * 300));
 
-  // Add top direct routes
-  for (const route of directRoutes.slice(0, 2)) {
-    const lineInfo = SORIA_LINES.find(l => l.code === route.lineCode);
-    const hasRoadworks = false;
+  for (const cand of directCandidates.slice(0, 4)) {
+    const lineInfo = SORIA_LINES.find(l => l.code === cand.lineCode);
+    const walk1Min = Math.max(1, Math.round(cand.walk1Dist / 70));
+    const walk2Min = Math.max(1, Math.round(cand.walk2Dist / 70));
     
-    const depInfo = await getNextDepartureInfo(route.lineCode, route.oStop.id, route.oStop.name, getStopETAs);
+    const passengerArrivalMin = nowMin + walk1Min;
+    const depInfo = await getNextDepartureInfo(cand.lineCode, cand.oStop.id, cand.oStop.name, getStopETAs, passengerArrivalMin, departureDate);
     
-    const walk1Min = Math.max(1, Math.round(route.oStop.dist / 70));
-    const walk2Min = Math.max(1, Math.round(route.dStop.dist / 70));
-    const busMin = Math.max(2, Math.round(route.busDist / 250));
+    const busRideMin = calculateTransitTimeMin(cand.lineCode, cand.oStop.id, cand.dStop.id, depInfo.tripMin, departureDate);
     const waitMin = depInfo.waitMin;
+    const totalTimeMin = walk1Min + waitMin + busRideMin + walk2Min;
 
     results.push({
-      id: `direct-${route.lineCode}-${route.oStop.id}-${route.dStop.id}`,
+      id: `direct-${cand.lineCode}-${cand.oStop.id}-${cand.dStop.id}`,
       type: 'direct',
       transfers: 0,
-      totalTimeMin: walk1Min + waitMin + busMin + walk2Min,
+      totalTimeMin,
       originName: originGeo.name,
       originLat: originGeo.lat,
       originLng: originGeo.lng,
       destName: destGeo.name,
       destLat: destGeo.lat,
       destLng: destGeo.lng,
-      oStop: route.oStop,
-      dStop: route.dStop,
-      hasRoadworks,
+      oStop: cand.oStop,
+      dStop: cand.dStop,
+      hasRoadworks: false,
       departureInfo: depInfo,
       legs: [
         {
           mode: 'walk',
-          description: `Camina desde ${originGeo.name} hasta la parada ${route.oStop.name}`,
+          description: `Camina desde ${originGeo.name} hasta la parada ${cand.oStop.name}`,
           fromCoords: [originGeo.lat, originGeo.lng],
-          toCoords: [route.oStop.lat, route.oStop.lng],
-          distanceMeters: route.oStop.dist,
+          toCoords: [cand.oStop.lat, cand.oStop.lng],
+          distanceMeters: cand.walk1Dist,
           timeMin: walk1Min
         },
         {
           mode: 'bus',
-          lineCode: route.lineCode,
+          lineCode: cand.lineCode,
           lineColor: lineInfo?.color || '#103056',
           badgeClass: lineInfo?.badgeClass || 'badge-l1',
-          boardStop: route.oStop.name,
-          boardStopId: route.oStop.id,
-          boardCoords: [route.oStop.lat, route.oStop.lng],
-          alightStop: route.dStop.name,
-          alightStopId: route.dStop.id,
-          alightCoords: [route.dStop.lat, route.dStop.lng],
-          timeMin: busMin,
+          boardStop: cand.oStop.name,
+          boardStopId: cand.oStop.id,
+          boardCoords: [cand.oStop.lat, cand.oStop.lng],
+          alightStop: cand.dStop.name,
+          alightStopId: cand.dStop.id,
+          alightCoords: [cand.dStop.lat, cand.dStop.lng],
+          timeMin: busRideMin,
           realTimeMin: waitMin,
           scheduledDeparture: depInfo.timeStr,
           departureLabel: depInfo.label,
@@ -425,10 +612,10 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
         },
         {
           mode: 'walk',
-          description: `Camina desde ${route.dStop.name} hasta tu destino ${destGeo.name}`,
-          fromCoords: [route.dStop.lat, route.dStop.lng],
+          description: `Camina desde ${cand.dStop.name} hasta tu destino ${destGeo.name}`,
+          fromCoords: [cand.dStop.lat, cand.dStop.lng],
           toCoords: [destGeo.lat, destGeo.lng],
-          distanceMeters: route.dStop.dist,
+          distanceMeters: cand.walk2Dist,
           timeMin: walk2Min
         }
       ],
@@ -436,128 +623,165 @@ export async function planAddressRoute(originQuery, destQuery, userLocation = nu
     });
   }
 
-  // 2. SEARCH FOR 1-TRANSFER ROUTES (If less than maxResults found directly)
-  if (results.length < maxResults) {
-    let transferRoutes = [];
-    originStops.forEach(oStop => {
-      destStops.forEach(dStop => {
-        oStop.lines.forEach(l1 => {
-          dStop.lines.forEach(l2 => {
-            if (l1 === l2) return; // Skip direct
+  // 2. SEARCH FOR 1-TRANSFER ROUTES
+  const transferCandidates = [];
+  for (const oStop of originStops) {
+    for (const dStop of destStops) {
+      if (String(oStop.id) === String(dStop.id)) continue;
 
-            // Find valid transfer hubs (stops serving both l1 and l2)
-            const hubs = SORIA_ALL_STOPS.filter(s => s.lines.includes(l1) && s.lines.includes(l2));
-            hubs.forEach(hub => {
-              const busDist1 = calculateDistanceMeters(oStop.lat, oStop.lng, hub.lat, hub.lng);
-              const busDist2 = calculateDistanceMeters(hub.lat, hub.lng, dStop.lat, dStop.lng);
-              
-              transferRoutes.push({
-                oStop, dStop, hub, l1, l2,
-                score: oStop.dist + dStop.dist + busDist1 + busDist2
+      for (const l1 of oStop.lines) {
+        if (!isLineActiveToday(l1, departureDate)) continue;
+
+        for (const l2 of dStop.lines) {
+          if (l1 === l2 || !isLineActiveToday(l2, departureDate)) continue;
+
+          const hubs = SORIA_ALL_STOPS.filter(s => s.lines.includes(l1) && s.lines.includes(l2));
+
+          for (const hub of hubs) {
+            if (String(hub.id) === String(oStop.id) || String(hub.id) === String(dStop.id)) continue;
+
+            const reach1 = isTopologicallyReachable(l1, oStop.id, hub.id);
+            const reach2 = isTopologicallyReachable(l2, hub.id, dStop.id);
+
+            if (reach1.reachable && reach2.reachable) {
+              transferCandidates.push({
+                oStop,
+                dStop,
+                hub,
+                l1,
+                l2,
+                reach1,
+                reach2,
+                score: oStop.dist + dStop.dist + (reach1.stopsCount + reach2.stopsCount) * 250
               });
-            });
-          });
-        });
-      });
-    });
-
-    transferRoutes.sort((a, b) => a.score - b.score);
-
-    // Pick the best transfer route to fill up the results
-    const addedTransferPairs = new Set();
-    transferRoutes.forEach(route => {
-      if (results.length >= maxResults) return;
-      const pairKey = `${route.l1}-${route.l2}`;
-      if (addedTransferPairs.has(pairKey)) return; // Diversity: avoid duplicate line combos
-      
-      addedTransferPairs.add(pairKey);
-
-      const line1Info = SORIA_LINES.find(l => l.code === route.l1);
-      const line2Info = SORIA_LINES.find(l => l.code === route.l2);
-
-      const walk1Min = Math.max(1, Math.round(route.oStop.dist / 70));
-      const bus1Min = Math.max(2, Math.round(calculateDistanceMeters(route.oStop.lat, route.oStop.lng, route.hub.lat, route.hub.lng) / 250));
-      const bus2Min = Math.max(2, Math.round(calculateDistanceMeters(route.hub.lat, route.hub.lng, route.dStop.lat, route.dStop.lng) / 250));
-      const walk2Min = Math.max(1, Math.round(route.dStop.dist / 70));
-      const wait1 = 4;
-      const transferWait = 4;
-
-      results.push({
-        id: `transfer-${route.l1}-${route.l2}-${route.hub.id}`,
-        type: 'transfer',
-        transfers: 1,
-        totalTimeMin: walk1Min + wait1 + bus1Min + transferWait + bus2Min + walk2Min,
-        originName: originGeo.name,
-        originLat: originGeo.lat,
-        originLng: originGeo.lng,
-        destName: destGeo.name,
-        destLat: destGeo.lat,
-        destLng: destGeo.lng,
-        oStop: route.oStop,
-        dStop: route.dStop,
-        hub: route.hub,
-        hasRoadworks: false,
-        legs: [
-          {
-            mode: 'walk',
-            description: `Camina desde ${originGeo.name} a la parada ${route.oStop.name}`,
-            fromCoords: [originGeo.lat, originGeo.lng],
-            toCoords: [route.oStop.lat, route.oStop.lng],
-            distanceMeters: route.oStop.dist,
-            timeMin: walk1Min
-          },
-          {
-            mode: 'bus',
-            lineCode: route.l1,
-            lineColor: line1Info?.color || '#E31A38',
-            badgeClass: line1Info?.badgeClass || 'badge-l2',
-            boardStop: route.oStop.name,
-            boardStopId: route.oStop.id,
-            boardCoords: [route.oStop.lat, route.oStop.lng],
-            alightStop: route.hub.name,
-            alightStopId: route.hub.id,
-            alightCoords: [route.hub.lat, route.hub.lng],
-            timeMin: bus1Min,
-            realTimeMin: wait1
-          },
-          {
-            mode: 'transfer',
-            description: `Transbordo en ${route.hub.name} (Espera: ~${transferWait} min)`,
-            hubName: route.hub.name,
-            hubCoords: [route.hub.lat, route.hub.lng],
-            waitMin: transferWait
-          },
-          {
-            mode: 'bus',
-            lineCode: route.l2,
-            lineColor: line2Info?.color || '#103056',
-            badgeClass: line2Info?.badgeClass || 'badge-l1',
-            boardStop: route.hub.name,
-            boardStopId: route.hub.id,
-            boardCoords: [route.hub.lat, route.hub.lng],
-            alightStop: route.dStop.name,
-            alightStopId: route.dStop.id,
-            alightCoords: [route.dStop.lat, route.dStop.lng],
-            timeMin: bus2Min,
-            realTimeMin: transferWait
-          },
-          {
-            mode: 'walk',
-            description: `Camina desde ${route.dStop.name} a ${destGeo.name}`,
-            fromCoords: [route.dStop.lat, route.dStop.lng],
-            toCoords: [destGeo.lat, destGeo.lng],
-            distanceMeters: route.dStop.dist,
-            timeMin: walk2Min
+            }
           }
-        ],
-        googleMapsUrl: generateGoogleMapsUrl(originGeo, destGeo)
-      });
+        }
+      }
+    }
+  }
+
+  transferCandidates.sort((a, b) => a.score - b.score);
+
+  const seenTransferCombos = new Set();
+  for (const cand of transferCandidates) {
+    if (results.length >= maxResults + 2) break;
+
+    const comboKey = `${cand.l1}-${cand.l2}-${cand.hub.id}`;
+    if (seenTransferCombos.has(comboKey)) continue;
+    seenTransferCombos.add(comboKey);
+
+    const line1Info = SORIA_LINES.find(l => l.code === cand.l1);
+    const line2Info = SORIA_LINES.find(l => l.code === cand.l2);
+
+    const walk1Min = Math.max(1, Math.round(cand.oStop.dist / 70));
+    const walk2Min = Math.max(1, Math.round(cand.dStop.dist / 70));
+
+    const passengerArrivalMin = nowMin + walk1Min;
+    const dep1 = await getNextDepartureInfo(cand.l1, cand.oStop.id, cand.oStop.name, getStopETAs, passengerArrivalMin, departureDate);
+    const bus1Min = calculateTransitTimeMin(cand.l1, cand.oStop.id, cand.hub.id, dep1.tripMin, departureDate);
+    
+    const hubArrivalMin = dep1.tripMin + bus1Min;
+    const earliestBoard2Min = hubArrivalMin + 2;
+
+    const dep2 = await getNextDepartureInfo(cand.l2, cand.hub.id, cand.hub.name, null, earliestBoard2Min, departureDate);
+    const bus2Min = calculateTransitTimeMin(cand.l2, cand.hub.id, cand.dStop.id, dep2.tripMin, departureDate);
+    
+    const wait1 = dep1.waitMin;
+    const transferWait = Math.max(2, dep2.tripMin - hubArrivalMin);
+    const totalTimeMin = walk1Min + wait1 + bus1Min + transferWait + bus2Min + walk2Min;
+
+    results.push({
+      id: `transfer-${cand.l1}-${cand.l2}-${cand.hub.id}`,
+      type: 'transfer',
+      transfers: 1,
+      totalTimeMin,
+      originName: originGeo.name,
+      originLat: originGeo.lat,
+      originLng: originGeo.lng,
+      destName: destGeo.name,
+      destLat: destGeo.lat,
+      destLng: destGeo.lng,
+      oStop: cand.oStop,
+      dStop: cand.dStop,
+      hub: cand.hub,
+      hasRoadworks: false,
+      legs: [
+        {
+          mode: 'walk',
+          description: `Camina desde ${originGeo.name} a la parada ${cand.oStop.name}`,
+          fromCoords: [originGeo.lat, originGeo.lng],
+          toCoords: [cand.oStop.lat, cand.oStop.lng],
+          distanceMeters: cand.oStop.dist,
+          timeMin: walk1Min
+        },
+        {
+          mode: 'bus',
+          lineCode: cand.l1,
+          lineColor: line1Info?.color || '#E31A38',
+          badgeClass: line1Info?.badgeClass || 'badge-l2',
+          boardStop: cand.oStop.name,
+          boardStopId: cand.oStop.id,
+          boardCoords: [cand.oStop.lat, cand.oStop.lng],
+          alightStop: cand.hub.name,
+          alightStopId: cand.hub.id,
+          alightCoords: [cand.hub.lat, cand.hub.lng],
+          timeMin: bus1Min,
+          realTimeMin: wait1,
+          scheduledDeparture: dep1.timeStr,
+          departureLabel: dep1.label
+        },
+        {
+          mode: 'transfer',
+          description: `Transbordo en ${cand.hub.name} (Espera estimada: ~${transferWait} min)`,
+          hubName: cand.hub.name,
+          hubCoords: [cand.hub.lat, cand.hub.lng],
+          waitMin: transferWait
+        },
+        {
+          mode: 'bus',
+          lineCode: cand.l2,
+          lineColor: line2Info?.color || '#103056',
+          badgeClass: line2Info?.badgeClass || 'badge-l1',
+          boardStop: cand.hub.name,
+          boardStopId: cand.hub.id,
+          boardCoords: [cand.hub.lat, cand.hub.lng],
+          alightStop: cand.dStop.name,
+          alightStopId: cand.dStop.id,
+          alightCoords: [cand.dStop.lat, cand.dStop.lng],
+          timeMin: bus2Min,
+          realTimeMin: transferWait,
+          scheduledDeparture: dep2.timeStr,
+          departureLabel: dep2.label
+        },
+        {
+          mode: 'walk',
+          description: `Camina desde ${cand.dStop.name} a ${destGeo.name}`,
+          fromCoords: [cand.dStop.lat, cand.dStop.lng],
+          toCoords: [destGeo.lat, destGeo.lng],
+          distanceMeters: cand.dStop.dist,
+          timeMin: walk2Min
+        }
+      ],
+      googleMapsUrl: generateGoogleMapsUrl(originGeo, destGeo)
     });
   }
 
-  // Sort final results by total time
   results.sort((a, b) => a.totalTimeMin - b.totalTimeMin);
-  return results;
+  
+  const finalResults = [];
+  const seenSignatures = new Set();
+
+  for (const r of results) {
+    const sig = r.legs.map(l => `${l.mode}-${l.lineCode || ''}-${l.boardStopId || ''}-${l.alightStopId || ''}`).join('|');
+    if (!seenSignatures.has(sig)) {
+      seenSignatures.add(sig);
+      finalResults.push(r);
+    }
+    if (finalResults.length >= maxResults) break;
+  }
+
+  return finalResults;
 }
 
 export function generateGoogleMapsUrl(origin, destination) {

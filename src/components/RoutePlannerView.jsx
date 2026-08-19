@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { planAddressRoute } from '../services/routePlanner';
+import { useLiveData } from '../context/LiveDataContext';
 
 const RoutePlannerView = ({ onShowOnMap }) => {
   const [originInput, setOriginInput] = useState('');
@@ -7,6 +8,7 @@ const RoutePlannerView = ({ onShowOnMap }) => {
   const [userLocation, setUserLocation] = useState(null);
   const [routes, setRoutes] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const { getStopETAs } = useLiveData();
 
   const handleMyLocation = () => {
     if (navigator.geolocation) {
@@ -28,7 +30,7 @@ const RoutePlannerView = ({ onShowOnMap }) => {
     if (!originInput || !destInput) return;
     setIsSearching(true);
     try {
-      const results = await planAddressRoute(originInput, destInput, userLocation);
+      const results = await planAddressRoute(originInput, destInput, userLocation, getStopETAs);
       setRoutes(results || []);
     } catch (e) {
       console.error(e);
