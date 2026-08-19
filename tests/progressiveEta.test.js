@@ -62,12 +62,12 @@ describe('Progressive ETA Fallback (Topological Engine 2.0)', () => {
     // If we take more than 3.5 seconds, it should break out.
     // For this, we'll mock fetch to advance the fake timer by 4000ms.
     
-    global.fetch.mockImplementation(async (url) => {
+    global.fetch.mockImplementation(async () => {
       vi.advanceTimersByTime(4000); // Exceed GLOBAL_TIMEOUT_MS
       return mockResponse({ jsontraffics2: '[]' });
     });
 
-    const result = await fetchStopETAs('21', { liveBuses: [] }); // liveBuses passed to trigger GPS path later if we had them
+    await fetchStopETAs('21', { liveBuses: [] }); // liveBuses passed to trigger GPS path later if we had them
     
     // We only expect 1 progressive query because it will timeout immediately after the first loop iteration
     expect(global.fetch.mock.calls.length).toBeLessThanOrEqual(2);

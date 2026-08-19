@@ -22,8 +22,8 @@ describe('Topology Map Validation', () => {
   it('should map every stop to a valid stopId in soriaLinesData, or null if strictly unmappable', () => {
     const validStopIds = new Set(SORIA_ALL_STOPS.map(s => String(s.id)));
     
-    for (const [line, mappedStops] of Object.entries(TOPOLOGY_MAP)) {
-      mappedStops.forEach((stop, idx) => {
+    for (const mappedStops of Object.values(TOPOLOGY_MAP)) {
+      mappedStops.forEach((stop) => {
         if (stop.id !== null) {
           expect(validStopIds.has(String(stop.id))).toBe(true);
         }

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { getEffectiveTopology } from '../src/services/etaEngine.js';
 import { AVANZA_FULL_SCHEDULES } from '../src/data/avanzaSchedules.js';
 import { TOPOLOGY_MAP } from '../src/data/topologyMap.js';

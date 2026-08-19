@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import https from 'https';
 
 describe('TLS Fix for Avanza CA', () => {
   const certPath = path.join(process.cwd(), 'certs', 'sectigo-ov-r36.pem');
