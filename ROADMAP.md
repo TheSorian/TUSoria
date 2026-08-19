@@ -1057,7 +1057,7 @@ Pulir TUSoria para su utilización como producto final.
 
 ## Estado
 
-**PENDIENTE**
+**COMPLETADA**
 
 ---
 
@@ -1229,7 +1229,7 @@ funcionalmente cuando sea posible.
 | 3 — Sincronización avanzada Avanza | ✅ |
 | 4 — Rendimiento | ✅ |
 | 5 — UX / Accesibilidad / Producto | ✅ |
-| 6 — PWA / Producto final | 🔵 |
+| 6 — PWA / Producto final | ✅ |
 
 ---
 
