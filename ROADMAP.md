@@ -953,7 +953,7 @@ No duplicar trabajo ya resuelto.
 
 ## Estado
 
-**PENDIENTE**
+**COMPLETADA**
 
 ---
 
@@ -1226,8 +1226,8 @@ funcionalmente cuando sea posible.
 | 1.3c — Integración realtime + ETA | ✅ |
 | 1.4 — Consolidación/validación realtime | ✅ |
 | 2 — Routing correcto | ✅ |
-| 3 — Sincronización avanzada Avanza | 🔵 |
-| 4 — Rendimiento | ⬜ |
+| 3 — Sincronización avanzada Avanza | ✅ |
+| 4 — Rendimiento | 🔵 |
 | 5 — UX / Accesibilidad / Producto | ⬜ |
 | 6 — PWA / Producto final | ⬜ |
 
