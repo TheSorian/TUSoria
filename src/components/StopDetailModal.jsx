@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchStopETAs, getFallbackETAs } from '../services/avanzaApi';
+import { getFallbackETAs } from '../services/avanzaApi';
 import { useLiveData } from '../context/LiveDataContext';
 import { SORIA_LINES } from '../data/soriaLines';
 import { CAMARETAS_TIMETABLE } from '../data/camaretasSchedule';

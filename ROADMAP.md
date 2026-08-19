@@ -761,7 +761,7 @@ y se beneficia de:
 
 ## Estado
 
-**PENDIENTE**
+**COMPLETADA**
 
 ## Importante
 
@@ -1224,8 +1224,8 @@ funcionalmente cuando sea posible.
 | 1.3 — Realtime centralizado | ✅ |
 | 1.3b — Motor ETA topológico | ✅ |
 | 1.3c — Integración realtime + ETA | ✅ |
-| 1.4 — Consolidación/validación realtime | 🔵 |
-| 2 — Routing correcto | ⬜ |
+| 1.4 — Consolidación/validación realtime | ✅ |
+| 2 — Routing correcto | 🔵 |
 | 3 — Sincronización avanzada Avanza | ⬜ |
 | 4 — Rendimiento | ⬜ |
 | 5 — UX / Accesibilidad / Producto | ⬜ |

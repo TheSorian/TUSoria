@@ -1,31 +1,17 @@
 import { SERVICE_ALERTS } from '../data/provisionalStops';
 import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
 import { AVANZA_FULL_SCHEDULES } from '../data/avanzaSchedules';
-import { findMatchingStopInSchedule, areStopsMatching } from '../utils/stopMatcher';
-import { getLinesForStop } from '../data/transitNetwork';
-import { interpolateEtaFromAnchor, estimateEtaFromGpsWithDirection, findTargetIndex, findActiveTripIndexForStop, getEffectiveTopology } from './etaEngine';
+import { findMatchingStopInSchedule } from '../utils/stopMatcher';
+import { interpolateEtaFromAnchor, estimateEtaFromGpsWithDirection, findActiveTripIndexForStop, getEffectiveTopology } from './etaEngine';
 import { TOPOLOGY_MAP } from '../data/topologyMap';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
-const AVG_BUS_SPEED_MPM = 250;
 
 export const HUB_STOP_IDS = ['1', '89', '3', '75', '85', '62', '5'];
 export const BROKEN_STOPS_BLACKLIST = [
   '10', '11', '13', '16', '21', '22', '30', '44', '96', '98', 
   '99', '101', '105', '106', '107', '108', '109', '110', '111', '112', '113'
 ];
-
-
-function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return Math.round(R * c);
-}
 
 function getDefaultDestination(lineCode) {
   if (lineCode === 'L1' || lineCode === 'L3') return 'Hospital Sta. Bárbara';
@@ -44,44 +30,6 @@ function formatArrivalTime(curMin, mins) {
   const arrHour = Math.floor((curMin + mins) / 60) % 24;
   const arrMin = (curMin + mins) % 60;
   return `${String(arrHour).padStart(2, '0')}:${String(arrMin).padStart(2, '0')}`;
-}
-
-function scheduleStopIndex(lineSched, soriaStop) {
-  const match = findMatchingStopInSchedule(lineSched.stops, soriaStop);
-  return match ? lineSched.stops.indexOf(match) : -1;
-}
-
-function findSoriaStopForScheduleStop(schedStop) {
-  return SORIA_ALL_STOPS.find(st => areStopsMatching(st.name, schedStop.name));
-}
-
-function findClosestStopIdx(lineSched, lat, lng) {
-  let minD = Infinity;
-  let closestIdx = -1;
-  lineSched.stops.forEach((s, idx) => {
-    const sData = findSoriaStopForScheduleStop(s);
-    if (sData) {
-      const d = calculateDistanceMeters(sData.lat, sData.lng, lat, lng);
-      if (d < minD) {
-        minD = d;
-        closestIdx = idx;
-      }
-    }
-  });
-  return closestIdx;
-}
-
-function routeDistanceBetweenStops(lineSched, fromIdx, toIdx) {
-  if (fromIdx === toIdx) return 0;
-  const start = Math.min(fromIdx, toIdx);
-  const end = Math.max(fromIdx, toIdx);
-  let dist = 0;
-  for (let i = start; i < end; i++) {
-    const s1 = findSoriaStopForScheduleStop(lineSched.stops[i]);
-    const s2 = findSoriaStopForScheduleStop(lineSched.stops[i + 1]);
-    if (s1 && s2) dist += calculateDistanceMeters(s1.lat, s1.lng, s2.lat, s2.lng);
-  }
-  return dist;
 }
 
 

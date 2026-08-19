@@ -30,7 +30,7 @@ export function updateBusState(idBusSAE, index, lat, lng) {
 }
 
 // --- TOPOLOGY HELPERS ---
-export function findTargetIndex(lineCode, targetStopId, busState = null, date = new Date()) {
+export function findTargetIndex(lineCode, targetStopId, busState = null, _date = new Date()) {
   const topology = TOPOLOGY_MAP[lineCode];
   if (!topology) return -1;
   
