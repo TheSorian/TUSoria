@@ -107,7 +107,7 @@ export default function StopDetailModal({ stop, onClose }) {
         </span>
       );
     }
-    if (eta.etaSource === 'interpolated') {
+    if (eta.etaSource === 'interpolated' || eta.etaSource === 'gps') {
       return (
         <span style={{
           display: 'inline-flex',
@@ -121,7 +121,7 @@ export default function StopDetailModal({ stop, onClose }) {
           fontSize: 10,
           fontWeight: 800
         }}>
-          Estimado
+          {eta.etaSource === 'gps' ? 'GPS' : 'Estimado'}
         </span>
       );
     }

@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react';
-import { getAllLiveBuses, fetchStopETAs, buildEtasFromLiveBuses, getFallbackETAs } from '../services/avanzaApi';
-import { SORIA_ALL_STOPS } from '../data/soriaLinesData';
+import { getAllLiveBuses, fetchStopETAs } from '../services/avanzaApi';
 
 const LiveDataContext = createContext({ 
   liveBuses: [],
@@ -8,13 +7,15 @@ const LiveDataContext = createContext({
   isLoading: false,
   error: null,
   isStale: true,
+  isDead: true,
   getStopETAs: async () => []
 });
 
 const INITIAL_POLL_MS = 8000;
 const MAX_POLL_MS = 60000;
 const STALE_THRESHOLD_MS = 25000;
-const DIRECT_ETA_CACHE_MS = 15000;
+const DEAD_THRESHOLD_MS = 120000;
+const ETA_CACHE_TTL_MS = 15000;
 
 export function LiveDataProvider({ children }) {
   const [state, setState] = useState({
@@ -22,11 +23,13 @@ export function LiveDataProvider({ children }) {
     lastUpdated: 0,
     isLoading: true,
     error: null,
-    isStale: true
+    isStale: true,
+    isDead: true
   });
 
   const stateRef = useRef(state);
   const etasCacheRef = useRef({});
+  const pendingEtasRef = useRef({});
 
   // Sync state to ref for use in unmounted closures or getStopETAs
   useEffect(() => {
@@ -56,7 +59,8 @@ export function LiveDataProvider({ children }) {
           lastUpdated: Date.now(),
           isLoading: false,
           error: null,
-          isStale: false
+          isStale: false,
+          isDead: false
         }));
       } catch (err) {
         if (!mounted) return;
@@ -67,13 +71,16 @@ export function LiveDataProvider({ children }) {
         else if (currentBackoff === 20000) currentBackoff = 30000;
         else if (currentBackoff >= 30000) currentBackoff = MAX_POLL_MS;
 
-        const isNowStale = (Date.now() - stateRef.current.lastUpdated) > STALE_THRESHOLD_MS;
+        const timeSinceUpdate = Date.now() - stateRef.current.lastUpdated;
+        const isNowStale = timeSinceUpdate > STALE_THRESHOLD_MS;
+        const isNowDead = timeSinceUpdate > DEAD_THRESHOLD_MS;
         
         setState(prev => ({
           ...prev,
           isLoading: false,
           error: err,
-          isStale: isNowStale
+          isStale: isNowStale,
+          isDead: isNowDead
         }));
       }
 
@@ -89,47 +96,44 @@ export function LiveDataProvider({ children }) {
   }, []);
 
   const getStopETAs = useCallback(async (stopId) => {
-    const targetStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
-    if (!targetStop) return [];
-    const targetLines = targetStop.lines.filter(l => l !== 'LC');
-
-    // 1. Check if direct ETAs are in cache and fresh
+    const key = String(stopId);
     const now = Date.now();
-    const cached = etasCacheRef.current[stopId];
-    let directData = null;
 
-    if (cached && (now - cached.timestamp < DIRECT_ETA_CACHE_MS)) {
-      directData = cached.data;
-    } else {
-      // 2. Fetch direct ETAs
+    // 1. Check if cached and within TTL (15 seconds)
+    const cached = etasCacheRef.current[key];
+    if (cached && (now - cached.timestamp < ETA_CACHE_TTL_MS)) {
+      return cached.data;
+    }
+
+    // 2. Check if a fetch for this stop is already in-flight (Promise Locking)
+    if (pendingEtasRef.current[key]) {
+      return pendingEtasRef.current[key];
+    }
+
+    // 3. Initiate fetch using the full unconstrained hierarchy
+    const fetchPromise = (async () => {
       try {
-        // fetchStopETAs with directOnly=true prevents hub fallback
-        const freshlyFetched = await fetchStopETAs(stopId, { directOnly: true });
-        etasCacheRef.current[stopId] = {
-          data: freshlyFetched,
+        const timeSinceLastUpdate = Date.now() - stateRef.current.lastUpdated;
+        const isDead = timeSinceLastUpdate > DEAD_THRESHOLD_MS;
+        const liveSnapshot = isDead ? [] : stateRef.current.liveBuses;
+
+        const data = await fetchStopETAs(key, { liveBuses: liveSnapshot });
+        
+        etasCacheRef.current[key] = {
+          data,
           timestamp: Date.now()
         };
-        directData = freshlyFetched;
-      } catch (e) {
-        directData = [];
+        return data;
+      } catch (error) {
+        console.warn(`[LiveDataContext] Failed to fetch ETAs for stop ${key}:`, error);
+        return [];
+      } finally {
+        delete pendingEtasRef.current[key];
       }
-    }
+    })();
 
-    if (directData && directData.length > 0) {
-      return directData;
-    }
-
-    // 3. Interpolate from current liveBuses if direct fails
-    const currentLiveBuses = stateRef.current.liveBuses;
-    if (currentLiveBuses && currentLiveBuses.length > 0 && !stateRef.current.isStale) {
-      const interpolated = buildEtasFromLiveBuses(currentLiveBuses, targetStop, targetLines);
-      if (interpolated.length > 0) {
-        return interpolated;
-      }
-    }
-
-    // 4. Fallback to schedule
-    return getFallbackETAs(stopId);
+    pendingEtasRef.current[key] = fetchPromise;
+    return fetchPromise;
   }, []);
 
   return (

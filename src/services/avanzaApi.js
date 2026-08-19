@@ -98,34 +98,6 @@ function buildEtaRecord(bus, lineCode, mins, curMin, etaSource) {
   };
 }
 
-async function fetchHubTraffics() {
-  const results = [];
-  const responses = await Promise.allSettled(
-    HUB_STOP_IDS.map(id => fetch(`/api/eta?stopId=${id}`).then(r => r.ok ? r.json() : null))
-  );
-
-  responses.forEach((res, idx) => {
-    const hubStopId = HUB_STOP_IDS[idx];
-    if (res.status !== 'fulfilled' || !res.value?.jsontraffics2) return;
-    try {
-      const traffics = JSON.parse(res.value.jsontraffics2);
-      traffics.forEach(b => {
-        if (!b.desLocalCompany || b.desLocalCompany.toLowerCase().includes('soria')) {
-          results.push({
-            bus: b,
-            hubStopId,
-            hubMinutes: b.minutesArrive ?? b.minutesRemaining ?? null
-          });
-        }
-      });
-    } catch (e) {
-      console.warn('[TUSoria API] Error parsing hub traffics', e);
-    }
-  });
-
-  return results;
-}
-
 
 
 export function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
@@ -162,12 +134,12 @@ export function buildEtasFromLiveBuses(liveBuses, targetStop, targetLines) {
  * Fetch real-time arrivals for a specific stop ID in Soria
  */
 export async function fetchStopETAs(stopId, options = {}) {
-  const { liveBuses = null, directOnly = false } = options;
+  const { liveBuses = null } = options;
   const targetStop = SORIA_ALL_STOPS.find(s => String(s.id) === String(stopId));
   const targetLines = targetStop ? targetStop.lines.filter(l => l !== 'LC') : [];
 
   if (!targetStop || targetLines.length === 0) {
-    return directOnly ? [] : getFallbackETAs(stopId);
+    return getFallbackETAs(stopId);
   }
 
   const now = new Date();
@@ -204,8 +176,6 @@ export async function fetchStopETAs(stopId, options = {}) {
     console.warn(`[TUSoria API] Direct stop ${stopId} query failed, trying interpolation...`, error);
   }
 
-  if (directOnly) return [];
-
   // 2. INTERPOLATED: Progressive topological search
   // We will keep track of buses we found to avoid duplicates
   const interpolatedBuses = [];
@@ -239,8 +209,6 @@ export async function fetchStopETAs(stopId, options = {}) {
           if (match) {
               const targetSchedIdx = lineSched.stops.indexOf(match);
               provTripIdx = findActiveTripIndexForStop(lineSched, targetSchedIdx, Date.now(), new Date());
-              // We removed the targetTime === null check because the provisional trip index
-              // should not abort the search. The fallback logic will handle it if the stop is missing.
           }
       }
       
@@ -267,8 +235,6 @@ export async function fetchStopETAs(stopId, options = {}) {
       }
 
       for (const targetIdx of targetIndices) {
-        let anchorFound = false;
-        
         for (let offset = 1; offset <= 6; offset++) {
           if (Date.now() - globalInterpolationStart > GLOBAL_TIMEOUT_MS) {
             console.warn(`[TUSoria API] Global interpolation timeout reached for ${stopId}`);
@@ -335,10 +301,9 @@ export async function fetchStopETAs(stopId, options = {}) {
                  }
                });
                
-               anchorFound = true;
                break; 
             }
-          } catch (err) {
+          } catch (_err) {
              console.warn(`[TUSoria API] Progressive anchor ${prevStopId} failed, trying next...`);
           }
         }
