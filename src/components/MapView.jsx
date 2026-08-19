@@ -469,6 +469,13 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
       
       const marker = L.marker([stop.lat, stop.lng], { icon }).addTo(layerGroup);
 
+      // L2 prolongation: Calaverón extension stops (only visited by certain L2 trips)
+      const CALAVERON_STOP_IDS = ['79', '77', '75', '74', '76', '78', '80'];
+      // L2 prolongation: Polígono extension stops
+      const POLIGONO_STOP_IDS = ['97', '98'];
+      const isCalaveronStop = CALAVERON_STOP_IDS.includes(String(stop.id));
+      const isPoligonoExtensionStop = POLIGONO_STOP_IDS.includes(String(stop.id));
+
       const extensionBadge = isCalaveronStop 
         ? `<div style="font-size:10px; color:#fbbf24; font-weight:bold; margin-bottom:4px;">⭐ Prolongación (*Calaverón)</div>` 
         : isPoligonoExtensionStop 
