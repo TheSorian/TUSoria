@@ -1030,7 +1030,7 @@ Pasar de una aplicación funcional a una experiencia de usuario sólida.
 
 ## Estado
 
-**PENDIENTE**
+**COMPLETADA**
 
 ---
 
@@ -1228,8 +1228,8 @@ funcionalmente cuando sea posible.
 | 2 — Routing correcto | ✅ |
 | 3 — Sincronización avanzada Avanza | ✅ |
 | 4 — Rendimiento | ✅ |
-| 5 — UX / Accesibilidad / Producto | 🔵 |
-| 6 — PWA / Producto final | ⬜ |
+| 5 — UX / Accesibilidad / Producto | ✅ |
+| 6 — PWA / Producto final | 🔵 |
 
 ---
 

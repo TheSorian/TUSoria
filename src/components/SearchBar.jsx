@@ -83,10 +83,10 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
   const handleRequestLocation = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        () => {
           setOriginQuery('Mi ubicación actual');
         },
-        (err) => {
+        (_err) => {
           alert('Por favor autoriza los permisos de ubicación en tu navegador para usar tu posición GPS.');
         },
         { enableHighAccuracy: true, timeout: 10000 }
