@@ -22,4 +22,10 @@ dist-ssr
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+# Scratch & local research binaries
+scratch/
+*.xapk
+*.db
+*.log
+*.zip
+*.jar

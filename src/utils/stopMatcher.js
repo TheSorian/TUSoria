@@ -96,3 +96,18 @@ export function findMatchingStopInSchedule(avanzaStops, soriaStopObj) {
 
   return matches[0];
 }
+
+/**
+ * Resolves a schedule stop via its direct ID (for future direct matches if Avanza exposes IDs in schedules)
+ */
+export function resolveScheduleStopById(scheduleStops, stopId) {
+  // Currently Avanza schedules don't have IDs directly, but when they do, this will be the canonical resolver.
+  return scheduleStops.find(s => String(s.id) === String(stopId)) || null;
+}
+
+/**
+ * Resolves a schedule stop via name-based fallback (current behavior)
+ */
+export function resolveScheduleStopByNameFallback(scheduleStops, soriaStopObj) {
+  return findMatchingStopInSchedule(scheduleStops, soriaStopObj);
+}

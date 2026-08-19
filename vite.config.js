@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 
+import { vercelApiProxyPlugin } from './api/devProxy.js';
+
 export default defineConfig({
   server: {
     host: true,
@@ -16,6 +18,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    vercelApiProxyPlugin(),
     basicSsl(),
     react(),
     VitePWA({
@@ -54,5 +57,22 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg}']
       }
     })
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'vendor-react';
+          }
+          if (id.includes('node_modules/leaflet') || id.includes('node_modules/react-leaflet')) {
+            return 'vendor-leaflet';
+          }
+          if (id.includes('node_modules/lucide-react')) {
+            return 'vendor-icons';
+          }
+        }
+      }
+    }
+  }
 });

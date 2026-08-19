@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { getAutocompleteSuggestions, planAddressRoute } from '../services/routePlanner';
+import { useLiveData } from '../context/LiveDataContext';
 
-export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, userLocation, geoPermission, alertsCount }) {
+export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, userLocation }) {
   const [isAdvancedMode, setIsAdvancedMode] = useState(false);
   const [destQuery, setDestQuery] = useState('');
   const [originQuery, setOriginQuery] = useState('');
@@ -12,6 +13,7 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
   const [showDropdown, setShowDropdown] = useState(false);
 
   const searchContainerRef = useRef(null);
+  const { getStopETAs } = useLiveData();
 
   // Close autocomplete on click outside
   useEffect(() => {
@@ -64,7 +66,7 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
 
     // If no origin specified, use user's GPS location or fallback to "Mi ubicación actual"
     const origin = originQuery.trim() ? originQuery.trim() : (userLocation || 'Mi ubicación actual');
-    const results = await planAddressRoute(origin, destQuery, userLocation);
+    const results = await planAddressRoute(origin, destQuery, userLocation, getStopETAs);
     
     setIsSearching(false);
     onRoutesFound(results);
@@ -81,10 +83,10 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
   const handleRequestLocation = () => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        () => {
           setOriginQuery('Mi ubicación actual');
         },
-        (err) => {
+        (_err) => {
           alert('Por favor autoriza los permisos de ubicación en tu navegador para usar tu posición GPS.');
         },
         { enableHighAccuracy: true, timeout: 10000 }

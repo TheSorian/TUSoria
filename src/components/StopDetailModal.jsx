@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchStopETAs, getFallbackETAs } from '../services/avanzaApi';
+import { getFallbackETAs } from '../services/avanzaApi';
 import { useLiveData } from '../context/LiveDataContext';
 import { SORIA_LINES } from '../data/soriaLines';
 import { CAMARETAS_TIMETABLE } from '../data/camaretasSchedule';
@@ -8,9 +8,7 @@ import { findMatchingStopInSchedule } from '../utils/stopMatcher';
 
 export default function StopDetailModal({ stop, onClose }) {
   const isLcStop = stop.lines.includes('LC') && !stop.lines.some(l => l !== 'LC');
-  const { liveBuses } = useLiveData();
-  const liveBusesRef = React.useRef(liveBuses);
-  liveBusesRef.current = liveBuses;
+  const { liveBuses, getStopETAs } = useLiveData();
   const [activeTab, setActiveTab] = useState(isLcStop ? 'schedule' : 'realtime');
   const [etas, setEtas] = useState(() => isLcStop ? [] : getFallbackETAs(stop.id));
   const [isRefreshing, setIsRefreshing] = useState(!isLcStop);
@@ -58,21 +56,40 @@ export default function StopDetailModal({ stop, onClose }) {
     setDragY(0);
   };
 
+  const hasEtasRef = React.useRef(etas.length > 0);
+  hasEtasRef.current = etas.length > 0;
+
   useEffect(() => {
     if (isLcStop) return;
 
     let cancelled = false;
+    
     async function load() {
-      setIsRefreshing(true);
-      const data = await fetchStopETAs(stop.id, { liveBuses: liveBusesRef.current });
-      if (!cancelled) {
-        setEtas(data);
-        setIsRefreshing(false);
+      if (!hasEtasRef.current) {
+        setIsRefreshing(true);
+      }
+      
+      try {
+        const data = await getStopETAs(stop.id);
+        
+        if (!cancelled) {
+          setEtas(data);
+        }
+      } catch (err) {
+        console.error("Failed to update modal ETAs:", err);
+      } finally {
+        if (!cancelled) {
+          setIsRefreshing(false);
+        }
       }
     }
+    
     load();
-    return () => { cancelled = true; };
-  }, [stop, isLcStop]);
+    
+    return () => { 
+      cancelled = true; 
+    };
+  }, [stop.id, liveBuses, isLcStop, getStopETAs]);
 
   function getEtaBadge(eta) {
     if (!eta.isLive || eta.etaSource === 'scheduled') {
@@ -90,7 +107,7 @@ export default function StopDetailModal({ stop, onClose }) {
         </span>
       );
     }
-    if (eta.etaSource === 'interpolated') {
+    if (eta.etaSource === 'interpolated' || eta.etaSource === 'gps') {
       return (
         <span style={{
           display: 'inline-flex',
@@ -104,7 +121,7 @@ export default function StopDetailModal({ stop, onClose }) {
           fontSize: 10,
           fontWeight: 800
         }}>
-          Estimado
+          {eta.etaSource === 'gps' ? 'GPS' : 'Estimado'}
         </span>
       );
     }
