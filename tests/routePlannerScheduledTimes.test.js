@@ -103,25 +103,53 @@ describe('Scheduled Route Planning (Depart At & Arrive By)', () => {
       expect(depMin).toBeLessThan(arrMin);
     });
 
-    it('handles direct walking when origin and destination are identical or very close', async () => {
+    it('selects the closest available expedition before target time without excessive advance notice', async () => {
       const tuesday = new Date('2023-10-10T08:00:00');
       const timeOptions = {
         mode: 'arrive_by',
-        timeStr: '12:00',
+        timeStr: '11:00',
         targetDate: tuesday
       };
 
       const routes = await planAddressRoute(
-        { name: 'Punto A', lat: 41.7638, lng: -2.4687 },
-        { name: 'Punto B', lat: 41.7639, lng: -2.4688 },
+        'Plaza Mariano Granados',
+        'Hospital Santa Bárbara',
         null,
         null,
         timeOptions
       );
 
-      expect(routes.length).toBe(1);
-      expect(routes[0].type).toBe('walk');
-      expect(routes[0].timeMode).toBe('arrive_by');
+      expect(routes.length).toBeGreaterThan(0);
+      const topRoute = routes[0];
+      const [arrH, arrM] = topRoute.arrivalTimeFormatted.split(':').map(Number);
+      const arrMin = arrH * 60 + arrM;
+      const targetMin = 11 * 60;
+      
+      // The arrival must be before or at 11:00, and within 20 minutes of 11:00 (not 45 min early!)
+      expect(arrMin).toBeLessThanOrEqual(targetMin);
+      expect(targetMin - arrMin).toBeLessThanOrEqual(20);
+    });
+
+    it('does not suggest inactive lines or out-of-hours trips with fake regular frequency', async () => {
+      const tuesdayNight = new Date('2023-10-10T02:30:00'); // 2:30 AM
+      const timeOptions = {
+        mode: 'now',
+        targetDate: tuesdayNight
+      };
+
+      const routes = await planAddressRoute(
+        'Plaza Mariano Granados',
+        'Polígono Industrial Las Casas',
+        null,
+        null,
+        timeOptions
+      );
+
+      // At 2:30 AM, urban buses shouldn't pretend to pass in 6 min
+      const busRoutes = routes.filter(r => r.type !== 'walk');
+      for (const r of busRoutes) {
+        expect(r.departureInfo?.waitMin).not.toBe(6);
+      }
     });
   });
 });

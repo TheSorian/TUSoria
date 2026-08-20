@@ -4,9 +4,18 @@ export default function RouteResultsDrawer({ routes, onClose, onShowOnMap }) {
   if (!routes || routes.length === 0) return null;
 
   return (
-    <div className="drawer-overlay">
-      <div className="drawer-panel card space-y">
-        <div className="flex items-center" style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+    <div className="drawer-overlay" onClick={onClose}>
+      <div 
+        className="drawer-panel card space-y" 
+        onClick={e => e.stopPropagation()}
+        style={{ 
+          maxHeight: '86vh', 
+          display: 'flex', 
+          flexDirection: 'column', 
+          paddingBottom: 'max(16px, env(safe-area-inset-bottom))'
+        }}
+      >
+        <div className="flex items-center" style={{ justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem', flexShrink: 0 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>🧭 Rutas en autobús encontradas</h3>
             <p className="text-xs text-muted" style={{ margin: 0 }}>Rutas optimizadas para la red de Soria</p>
@@ -14,7 +23,7 @@ export default function RouteResultsDrawer({ routes, onClose, onShowOnMap }) {
           <button className="icon-btn" onClick={onClose}>✕</button>
         </div>
 
-        <div className="space-y" style={{ maxHeight: '60vh', overflowY: 'auto', paddingRight: 4 }}>
+        <div className="space-y" style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', paddingRight: 4, paddingBottom: 24 }}>
           {routes.map((route, i) => {
             const isDirect = route.transfers === 0;
             return (

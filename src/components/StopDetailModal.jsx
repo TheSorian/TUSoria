@@ -159,7 +159,8 @@ export default function StopDetailModal({ stop, onClose }) {
 
   const modalStyle = {
     transform: dragY !== 0 ? `translateY(${dragY}px)` : 'translateY(0)',
-    height: isExpanded ? '95vh' : '75vh',
+    height: isExpanded ? '94vh' : (activeTab === 'schedule' ? '88vh' : '82vh'),
+    maxHeight: '94vh',
     transition: touchStartY.current === 0 ? 'height 0.3s cubic-bezier(0.25, 1, 0.5, 1), transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)' : 'none'
   };
 

@@ -270,15 +270,101 @@ export async function getNextDepartureInfo(
     }
   }
 
-  // Fallback heuristic default
+  // 3. Line LC (Camaretas) Timetable
+  if (lineCode === 'LC') {
+    const day = date.getDay();
+    let deps = CAMARETAS_TIMETABLE.departuresFromSoria.mondayToThursday;
+    if (String(stopId).startsWith('LC_CC') || String(stopId).startsWith('LC_CIVICO')) {
+      deps = CAMARETAS_TIMETABLE.departuresFromCamaretas.mondayToThursday;
+      if (day === 5 || day === 6) deps = CAMARETAS_TIMETABLE.departuresFromCamaretas.fridayAndSaturday;
+      else if (day === 0) deps = CAMARETAS_TIMETABLE.departuresFromCamaretas.sunday;
+    } else {
+      if (day === 5 || day === 6) deps = CAMARETAS_TIMETABLE.departuresFromSoria.fridayAndSaturday;
+      else if (day === 0) deps = CAMARETAS_TIMETABLE.departuresFromSoria.sunday;
+    }
+
+    let bestDep = null;
+    let minDiff = Infinity;
+    deps.forEach(d => {
+      const [h, m] = d.time.split(':').map(Number);
+      const tripMin = h * 60 + m;
+      const diff = tripMin - targetMinMinutes;
+      if (diff >= 0 && diff < minDiff) {
+        minDiff = diff;
+        bestDep = d.time;
+      }
+    });
+
+    if (bestDep) {
+      const [h, m] = bestDep.split(':').map(Number);
+      const tripMin = h * 60 + m;
+      return {
+        timeStr: bestDep,
+        formattedTime: bestDep,
+        waitMin: minDiff,
+        tripMin,
+        isRealTime: false,
+        isStarred: false,
+        label: `Horario oficial Camaretas: ${bestDep}`
+      };
+    }
+  }
+
+  // 4. Line EX (06:45, 07:45, 14:45 on workdays)
+  if (lineCode === 'EX') {
+    const day = date.getDay();
+    if (day >= 1 && day <= 5) {
+      const exDeps = ['06:45', '07:45', '14:45'];
+      let bestDep = null;
+      let minDiff = Infinity;
+      exDeps.forEach(tStr => {
+        const [h, m] = tStr.split(':').map(Number);
+        const tripMin = h * 60 + m;
+        const diff = tripMin - targetMinMinutes;
+        if (diff >= 0 && diff < minDiff) {
+          minDiff = diff;
+          bestDep = tStr;
+        }
+      });
+      if (bestDep) {
+        const [h, m] = bestDep.split(':').map(Number);
+        const tripMin = h * 60 + m;
+        return {
+          timeStr: bestDep,
+          formattedTime: bestDep,
+          waitMin: minDiff,
+          tripMin,
+          isRealTime: false,
+          isStarred: false,
+          label: `Horario Exprés Polígono: ${bestDep}`
+        };
+      }
+    }
+  }
+
+  // 5. Fallback heuristic for active lines during daytime service hours (07:00 to 22:45)
+  const hour = Math.floor(targetMinMinutes / 60);
+  if (hour >= 7 && hour <= 22) {
+    return {
+      timeStr: 'Frecuencia regular',
+      formattedTime: 'Frecuencia regular',
+      waitMin: 6,
+      tripMin: targetMinMinutes + 6,
+      isRealTime: false,
+      isStarred: false,
+      label: 'Horario habitual'
+    };
+  }
+
+  // If outside operating hours or no expeditions remaining
   return {
-    timeStr: 'Frecuencia regular',
-    formattedTime: 'Frecuencia regular',
-    waitMin: 6,
-    tripMin: targetMinMinutes + 6,
+    timeStr: 'Sin servicio a esta hora',
+    formattedTime: 'Sin servicio a esta hora',
+    waitMin: 999,
+    tripMin: 999,
     isRealTime: false,
     isStarred: false,
-    label: 'Horario habitual'
+    label: 'Fuera de horario de servicio'
   };
 }
 
@@ -721,6 +807,7 @@ export async function planAddressRoute(
     let departureLabel = '';
     let isStarred = false;
     let waitMin = 0;
+    let depInfo = null;
 
     if (isArriveBy) {
       // Arrive By Mode: Calculate backwards from target arrival time
@@ -750,7 +837,7 @@ export async function planAddressRoute(
     } else {
       // Depart At or Now Mode: Calculate forward
       const passengerArrivalMin = targetTimeMinutes + walk1Min;
-      const depInfo = await getNextDepartureInfo(
+      depInfo = await getNextDepartureInfo(
         cand.lineCode,
         cand.oStop.id,
         cand.oStop.name,
@@ -758,6 +845,10 @@ export async function planAddressRoute(
         passengerArrivalMin,
         targetDate
       );
+
+      if (depInfo.waitMin >= 900) {
+        continue;
+      }
 
       busRideMin = calculateTransitTimeMin(cand.lineCode, cand.oStop.id, cand.dStop.id, depInfo.tripMin, targetDate);
       boardTimeMin = depInfo.tripMin;
@@ -777,6 +868,8 @@ export async function planAddressRoute(
       type: 'direct',
       transfers: 0,
       totalTimeMin,
+      destArrivalMin,
+      departureOriginMin: departOriginMin,
       timeMode,
       targetTimeStr,
       departureTimeFormatted: formatMinutesToTimeString(departOriginMin),
@@ -877,7 +970,7 @@ export async function planAddressRoute(
 
   const seenTransferCombos = new Set();
   for (const cand of transferCandidates) {
-    if (results.length >= maxResults + 2) break;
+    if (results.length >= maxResults + 4) break;
 
     const comboKey = `${cand.l1}-${cand.l2}-${cand.hub.id}`;
     if (seenTransferCombos.has(comboKey)) continue;
@@ -929,6 +1022,8 @@ export async function planAddressRoute(
       // Depart At or Now Mode: Calculate forward
       const passengerArrivalMin = targetTimeMinutes + walk1Min;
       dep1Info = await getNextDepartureInfo(cand.l1, cand.oStop.id, cand.oStop.name, isScheduledOnly ? null : getStopETAs, passengerArrivalMin, targetDate);
+      if (dep1Info.waitMin >= 900) continue;
+
       bus1Min = calculateTransitTimeMin(cand.l1, cand.oStop.id, cand.hub.id, dep1Info.tripMin, targetDate);
       
       board1Min = dep1Info.tripMin;
@@ -936,6 +1031,8 @@ export async function planAddressRoute(
       const earliestBoard2Min = alight1Min + 2;
 
       dep2Info = await getNextDepartureInfo(cand.l2, cand.hub.id, cand.hub.name, null, earliestBoard2Min, targetDate);
+      if (dep2Info.waitMin >= 900) continue;
+
       bus2Min = calculateTransitTimeMin(cand.l2, cand.hub.id, cand.dStop.id, dep2Info.tripMin, targetDate);
       board2Min = dep2Info.tripMin;
       alight2Min = board2Min + bus2Min;
@@ -952,6 +1049,8 @@ export async function planAddressRoute(
       type: 'transfer',
       transfers: 1,
       totalTimeMin,
+      destArrivalMin,
+      departureOriginMin: departOriginMin,
       timeMode,
       targetTimeStr,
       departureTimeFormatted: formatMinutesToTimeString(departOriginMin),
@@ -1035,7 +1134,33 @@ export async function planAddressRoute(
     });
   }
 
-  results.sort((a, b) => a.totalTimeMin - b.totalTimeMin);
+  // Sort results according to the search mode
+  if (isArriveBy) {
+    // In Arrive By mode: Prioritize the route that arrives closest to the requested time (smallest gap before target arrival), then lowest total travel time
+    results.sort((a, b) => {
+      const gapA = targetTimeMinutes - a.destArrivalMin;
+      const gapB = targetTimeMinutes - b.destArrivalMin;
+      // Valid routes that arrive before or at target time (gap >= 0) come first
+      if (gapA >= 0 && gapB >= 0) {
+        if (Math.abs(gapA - gapB) > 4) {
+          return gapA - gapB; // Smallest gap first (e.g. 5 min before is better than 45 min before!)
+        }
+      }
+      return a.totalTimeMin - b.totalTimeMin;
+    });
+  } else if (isDepartAt) {
+    // In Depart At mode: Prioritize smallest wait after departure time
+    results.sort((a, b) => {
+      const waitA = a.departureOriginMin - targetTimeMinutes;
+      const waitB = b.departureOriginMin - targetTimeMinutes;
+      if (Math.abs(waitA - waitB) > 4) {
+        return waitA - waitB;
+      }
+      return a.totalTimeMin - b.totalTimeMin;
+    });
+  } else {
+    results.sort((a, b) => a.totalTimeMin - b.totalTimeMin);
+  }
   
   const finalResults = [];
   const seenSignatures = new Set();
