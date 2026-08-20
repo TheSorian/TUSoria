@@ -8,6 +8,7 @@
     "serve": "vite preview --host",
     "build": "vite build",
     "sync": "node scripts/syncAvanzaData.mjs",
+    "icons": "node scripts/generateIcons.mjs",
     "lint": "oxlint",
     "preview": "vite preview --host",
     "test": "vitest run"
@@ -26,6 +27,7 @@
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^6.0.4",
     "oxlint": "^1.75.0",
+    "sharp": "^0.35.3",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
   }
