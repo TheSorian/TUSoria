@@ -28,7 +28,7 @@ Puedes descargar la versión más reciente lista para instalar desde GitHub:
 3. Pulsa **Instalar**.
 4. ¡Listo! Disfruta de la app con apertura instantánea, pantalla completa y soporte de geolocalización GPS nativa.
 
-> **Compilación Automática:** El repositorio incluye un flujo de trabajo continuo en **GitHub Actions** (`.github/workflows/build-apk.yml`) que genera y actualiza automáticamente el APK con cada actualización en la rama principal `main`.
+> **Compilación Bajo Demanda:** El repositorio incluye un flujo de trabajo en **GitHub Actions** (`.github/workflows/build-apk.yml`) que permite generar y publicar el APK actualizado cuando se desee ejecutándolo manualmente desde la pestaña *Actions*.
 
 ---
 
