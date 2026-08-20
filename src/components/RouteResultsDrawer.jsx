@@ -19,7 +19,7 @@ export default function RouteResultsDrawer({ routes, onClose, onShowOnMap }) {
             const isDirect = route.transfers === 0;
             return (
               <div key={route.id || i} className="card" style={{ borderLeft: `4px solid ${isDirect ? '#10b981' : '#f59e0b'}` }}>
-                <div className="flex items-center" style={{ justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                <div className="flex items-center" style={{ justifyContent: 'space-between', marginBottom: '0.35rem' }}>
                   <span className="chip" style={{ 
                     background: isDirect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
                     color: isDirect ? '#10b981' : '#f59e0b',
@@ -27,13 +27,38 @@ export default function RouteResultsDrawer({ routes, onClose, onShowOnMap }) {
                   }}>
                     {isDirect ? '✓ Ruta Directa' : '🔄 1 Transbordo'}
                   </span>
-                  <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--accent)' }}>
-                    ~{route.totalTimeMin} min
-                  </span>
+                  <div style={{ textAlign: 'right' }}>
+                    {route.departureTimeFormatted && route.arrivalTimeFormatted ? (
+                      <div>
+                        <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                          {route.departureTimeFormatted} ➔ {route.arrivalTimeFormatted}
+                        </span>
+                        <span className="text-xxs text-muted" style={{ display: 'block' }}>
+                          (~{route.totalTimeMin} min total)
+                        </span>
+                      </div>
+                    ) : (
+                      <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--accent)' }}>
+                        ~{route.totalTimeMin} min
+                      </span>
+                    )}
+                  </div>
                 </div>
 
+                {/* Schedule Advice Banner */}
+                {route.timeMode === 'arrive_by' && route.departureTimeFormatted && (
+                  <div style={{ background: 'rgba(59, 130, 246, 0.12)', border: '1px solid rgba(59, 130, 246, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '11px', color: 'var(--accent-text)', marginBottom: '0.5rem' }}>
+                    🏁 Para llegar a las <b>{route.targetTimeStr}</b>, sal a pie a las <b>{route.departureTimeFormatted}</b>.
+                  </div>
+                )}
+                {route.timeMode === 'depart_at' && route.arrivalTimeFormatted && (
+                  <div style={{ background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: '6px', padding: '6px 8px', fontSize: '11px', color: '#10b981', marginBottom: '0.5rem' }}>
+                    🕐 Saliendo a las <b>{route.targetTimeStr}</b>, llegarás sobre las <b>{route.arrivalTimeFormatted}</b>.
+                  </div>
+                )}
+
                 {/* Timeline */}
-                <div className="timeline" style={{ marginTop: '0.75rem' }}>
+                <div className="timeline" style={{ marginTop: '0.5rem' }}>
                   {route.legs?.map((leg, j) => (
                     <div key={j} className="timeline-step flex gap-2">
                       <div className="timeline-dot flex items-center" style={{
@@ -55,9 +80,10 @@ export default function RouteResultsDrawer({ routes, onClose, onShowOnMap }) {
                         {leg.mode === 'walk' && (
                           <div className="text-sm">
                             <div style={{ fontWeight: 500 }}>{leg.description}</div>
-                            {leg.distanceMeters && (
-                              <div className="text-xs text-muted">~{leg.distanceMeters} m ({leg.timeMin} min a pie)</div>
-                            )}
+                            <div className="text-xs text-muted">
+                              {leg.startTime && leg.endTime ? `${leg.startTime} ➔ ${leg.endTime} · ` : ''}
+                              ~{leg.distanceMeters || Math.round((leg.timeMin || 1) * 70)} m ({leg.timeMin} min a pie)
+                            </div>
                           </div>
                         )}
 
@@ -65,17 +91,25 @@ export default function RouteResultsDrawer({ routes, onClose, onShowOnMap }) {
                           <div className="text-sm">
                             <div className="flex items-center gap-2">
                               <span className="line-badge" style={{ background: leg.lineColor }}>{leg.lineCode}</span>
-                              <span style={{ fontWeight: 600 }}>Sube en: {leg.boardStop}</span>
+                              <span style={{ fontWeight: 600 }}>Sube en: {leg.boardStop} {leg.boardTime ? `(${leg.boardTime})` : ''}</span>
                             </div>
                             <div className="text-xs text-muted" style={{ marginTop: 2 }}>
-                              Baja en: <strong>{leg.alightStop}</strong> (~{leg.timeMin} min en bus)
+                              Baja en: <strong>{leg.alightStop}</strong> {leg.alightTime ? `(${leg.alightTime})` : ''} (~{leg.timeMin} min en bus)
                             </div>
+                            {leg.departureLabel && (
+                              <div className="text-xxs text-secondary" style={{ marginTop: 2 }}>
+                                {leg.departureLabel}
+                              </div>
+                            )}
                           </div>
                         )}
 
                         {leg.mode === 'transfer' && (
                           <div className="text-sm text-amber" style={{ fontWeight: 500 }}>
                             {leg.description}
+                            {leg.startTime && leg.endTime && (
+                              <div className="text-xxs text-muted">{leg.startTime} ➔ {leg.endTime}</div>
+                            )}
                           </div>
                         )}
                       </div>

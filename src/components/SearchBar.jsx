@@ -58,6 +58,14 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
     }
   };
 
+  // Time Options for Route Planning: 'now' | 'depart_at' | 'arrive_by'
+  const [timeMode, setTimeMode] = useState('now');
+  const [customTime, setCustomTime] = useState(() => {
+    const d = new Date();
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  });
+  const [dayOption, setDayOption] = useState('today'); // 'today' | 'tomorrow'
+
   const handleSearchRoute = async () => {
     if (!destQuery.trim()) return;
 
@@ -66,7 +74,20 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
 
     // If no origin specified, use user's GPS location or fallback to "Mi ubicación actual"
     const origin = originQuery.trim() ? originQuery.trim() : (userLocation || 'Mi ubicación actual');
-    const results = await planAddressRoute(origin, destQuery, userLocation, getStopETAs);
+    
+    // Construct target date
+    const targetDate = new Date();
+    if (dayOption === 'tomorrow') {
+      targetDate.setDate(targetDate.getDate() + 1);
+    }
+
+    const timeOptions = {
+      mode: timeMode,
+      timeStr: timeMode === 'now' ? '' : customTime,
+      targetDate
+    };
+
+    const results = await planAddressRoute(origin, destQuery, userLocation, getStopETAs, timeOptions);
     
     setIsSearching(false);
     onRoutesFound(results);
@@ -77,6 +98,7 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
     setOriginQuery('');
     setSuggestions([]);
     setShowDropdown(false);
+    setTimeMode('now');
     onResetSearch();
   };
 
@@ -176,6 +198,79 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
           </div>
         )}
 
+        {/* Time Mode and Schedule Picker (Visible when routing) */}
+        {(destQuery.length > 1 || isAdvancedMode) && (
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
+            {/* Mode selection chips */}
+            <div className="flex gap-1" style={{ marginBottom: timeMode !== 'now' ? 8 : 0 }}>
+              <button
+                type="button"
+                className={`btn-chip-sm ${timeMode === 'now' ? 'active' : ''}`}
+                style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '4px 6px' }}
+                onClick={() => setTimeMode('now')}
+              >
+                ⏱️ Salir ahora
+              </button>
+              <button
+                type="button"
+                className={`btn-chip-sm ${timeMode === 'depart_at' ? 'active' : ''}`}
+                style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '4px 6px' }}
+                onClick={() => setTimeMode('depart_at')}
+              >
+                🕐 Salir a las...
+              </button>
+              <button
+                type="button"
+                className={`btn-chip-sm ${timeMode === 'arrive_by' ? 'active' : ''}`}
+                style={{ flex: 1, textAlign: 'center', fontSize: '11px', padding: '4px 6px' }}
+                onClick={() => setTimeMode('arrive_by')}
+              >
+                🏁 Llegar a las...
+              </button>
+            </div>
+
+            {/* Time & Day Picker if custom time selected */}
+            {timeMode !== 'now' && (
+              <div className="flex items-center gap-2" style={{ background: 'var(--bg-elevated)', padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  {timeMode === 'depart_at' ? 'Salida:' : 'Llegada:'}
+                </span>
+                <input
+                  type="time"
+                  className="input text-xs"
+                  value={customTime}
+                  onChange={(e) => setCustomTime(e.target.value)}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontWeight: 700,
+                    fontSize: '13px'
+                  }}
+                />
+                <select
+                  className="input text-xs"
+                  value={dayOption}
+                  onChange={(e) => setDayOption(e.target.value)}
+                  style={{
+                    background: 'var(--bg-surface)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    padding: '3px 8px',
+                    fontWeight: 600
+                  }}
+                >
+                  <option value="today">Hoy</option>
+                  <option value="tomorrow">Mañana</option>
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Action button if user has typed something or is in route mode */}
         {(destQuery.length > 1 || isAdvancedMode) && (
           <button
@@ -185,7 +280,13 @@ export default function SearchBar({ onSelectStop, onRoutesFound, onResetSearch, 
             onClick={handleSearchRoute}
             disabled={isSearching}
           >
-            {isSearching ? 'Calculando rutas...' : '🧭 Calcular Ruta'}
+            {isSearching ? 'Calculando rutas...' : (
+              timeMode === 'arrive_by' 
+                ? `🏁 Buscar ruta para llegar a las ${customTime}` 
+                : timeMode === 'depart_at' 
+                ? `🕐 Buscar ruta saliendo a las ${customTime}` 
+                : '🧭 Calcular Ruta en Tiempo Real'
+            )}
           </button>
         )}
       </div>
