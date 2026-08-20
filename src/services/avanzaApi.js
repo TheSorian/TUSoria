@@ -7,6 +7,23 @@ import { TOPOLOGY_MAP } from '../data/topologyMap';
 
 const BASE_URL = 'https://soria.avanzagrupo.com';
 
+export function getApiBaseUrl() {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const isCapacitor = window.Capacitor?.isNativePlatform?.() || 
+      window.location.protocol === 'capacitor:' || 
+      window.location.protocol === 'ionic:' || 
+      window.location.protocol === 'file:' ||
+      (window.location.hostname === 'localhost' && !window.location.port);
+    if (isCapacitor) {
+      return 'https://tu-soria.vercel.app';
+    }
+  }
+  return '';
+}
+
 export const HUB_STOP_IDS = ['1', '89', '3', '75', '85', '62', '5'];
 export const BROKEN_STOPS_BLACKLIST = [
   '10', '11', '13', '16', '21', '22', '30', '44', '96', '98', 
@@ -95,7 +112,7 @@ export async function fetchStopETAs(stopId, options = {}) {
 
   // 1. REAL: Try querying the specific stopId directly
   try {
-    const proxyEndpoint = `/api/eta?stopId=${encodeURIComponent(stopId)}`;
+    const proxyEndpoint = `${getApiBaseUrl()}/api/eta?stopId=${encodeURIComponent(stopId)}`;
     const response = await fetch(proxyEndpoint);
     if (response.ok) {
       const data = await response.json();
@@ -204,7 +221,7 @@ export async function fetchStopETAs(stopId, options = {}) {
           }
 
           try {
-            const anchorRes = await fetchWithTimeout(`/api/eta?stopId=${encodeURIComponent(prevStopId)}`, 1500);
+            const anchorRes = await fetchWithTimeout(`${getApiBaseUrl()}/api/eta?stopId=${encodeURIComponent(prevStopId)}`, 1500);
             if (!anchorRes.ok) continue;
             const anchorData = await anchorRes.json();
             const rawAnchor = anchorData.jsontraffics2 ? JSON.parse(anchorData.jsontraffics2) : [];
@@ -429,7 +446,7 @@ export async function getAllLiveBuses() {
 
   try {
     const responses = await Promise.allSettled(
-      HUB_STOP_IDS.map(id => fetch(`/api/eta?stopId=${id}`).then(r => r.ok ? r.json() : null))
+      HUB_STOP_IDS.map(id => fetch(`${getApiBaseUrl()}/api/eta?stopId=${id}`).then(r => r.ok ? r.json() : null))
     );
 
     responses.forEach((res, hubIdx) => {

@@ -126,6 +126,28 @@ async function generateAll() {
     .toFile(path.join(pubDir, 'favicon.png'));
   console.log('✓ Generated public/favicon.png (64x64)');
 
+  // 7. Android Native Mipmaps
+  const androidResDir = path.join(process.cwd(), 'android', 'app', 'src', 'main', 'res');
+  if (fs.existsSync(androidResDir)) {
+    const mipmaps = [
+      { folder: 'mipmap-mdpi', size: 48, fgSize: 108 },
+      { folder: 'mipmap-hdpi', size: 72, fgSize: 162 },
+      { folder: 'mipmap-xhdpi', size: 96, fgSize: 216 },
+      { folder: 'mipmap-xxhdpi', size: 144, fgSize: 324 },
+      { folder: 'mipmap-xxxhdpi', size: 192, fgSize: 432 }
+    ];
+
+    for (const m of mipmaps) {
+      const dir = path.join(androidResDir, m.folder);
+      if (fs.existsSync(dir)) {
+        await sharp(svgBuffer).resize(m.size, m.size).png().toFile(path.join(dir, 'ic_launcher.png'));
+        await sharp(svgBuffer).resize(m.size, m.size).png().toFile(path.join(dir, 'ic_launcher_round.png'));
+        await sharp(svgBuffer).resize(m.fgSize, m.fgSize).png().toFile(path.join(dir, 'ic_launcher_foreground.png'));
+        console.log(`✓ Generated Android ${m.folder} icons (${m.size}x${m.size})`);
+      }
+    }
+  }
+
   console.log('All icons generated successfully!');
 }
 
