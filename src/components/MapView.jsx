@@ -79,7 +79,7 @@ function isExtensionPoint(lat, lng, lineCode, polyIdx = 0) {
   return false;
 }
 
-function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup, polyIdx = 0) {
+function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup, polyIdx = 0, arrowThreshold = 0.006) {
   if (!coords || coords.length === 0) return;
 
   let currentSegment = [coords[0]];
@@ -129,8 +129,8 @@ function renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGr
     }
   }
 
-  // Render direction arrows at perfectly even physical intervals
-  const ARROW_DISTANCE_THRESHOLD = 0.002; // Roughly 200 meters
+  // Render direction arrows at physically calibrated intervals
+  const ARROW_DISTANCE_THRESHOLD = arrowThreshold;
   let accumulatedDist = 0;
   
   for (let i = 1; i < coords.length - 2; i++) {
@@ -347,7 +347,8 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
   useEffect(() => {
     if (!mapRef.current && mapContainerRef.current) {
       const map = L.map(mapContainerRef.current, {
-        zoomControl: false
+        zoomControl: false,
+        preferCanvas: true
       }).setView([41.7638, -2.4687], 14);
 
       L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -403,6 +404,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
     
     // 2. Draw background line polylines (Differentiating standard vs prolongation *Calaverón / *Polígono)
     const isRouteActive = !!activeRoute;
+    const arrowThreshold = selectedLineFilter ? 0.0025 : 0.007;
     const linePriority = { 'LC': 1, 'C': 1, 'EX': 2, 'L4E': 2 };
     const sortedLineCodes = Object.keys(REAL_LINE_POLYLINES).sort((a, b) => {
       const pA = linePriority[a] || 10;
@@ -429,7 +431,7 @@ export default function MapView({ onSelectStop, activeRoute, userLocation, selec
 
       polylineArrays.forEach((coords, polyIdx) => {
         if (coords && coords.length > 0) {
-          renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup, polyIdx);
+          renderSegmentedPolyline(coords, lineCode, color, isRouteActive, layerGroup, polyIdx, arrowThreshold);
         }
       });
     });

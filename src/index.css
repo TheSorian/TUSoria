@@ -442,8 +442,13 @@ body {
 .leaflet-popup-content { margin: 0 !important; }
 .leaflet-popup-tip { background: var(--bg-elevated) !important; }
 
-/* Custom stop icon reset */
-.stop-marker, .bus-marker { background: none !important; border: none !important; }
+/* Custom stop icon reset & GPU layer acceleration */
+.stop-marker, .bus-marker, .polyline-arrow-marker, .user-gps-marker {
+  background: none !important;
+  border: none !important;
+  will-change: transform;
+  contain: layout style;
+}
 
 /* ===== CARDS ===== */
 .card {
