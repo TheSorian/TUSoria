@@ -28,25 +28,27 @@ export default defineConfig({
         name: 'TUSoria',
         short_name: 'TUSoria',
         description: 'Transporte Urbano de Soria en Tiempo Real',
-        theme_color: '#2563eb',
-        background_color: '#ffffff',
+        theme_color: '#0c1425',
+        background_color: '#0c1425',
         display: 'standalone',
         icons: [
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/png'
-          },
-          {
-            src: 'pwa-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any'
           },
           {
             src: 'pwa-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'any'
+          },
+          {
+            src: 'pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
           }
         ]
       },
