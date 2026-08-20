@@ -27,5 +27,6 @@ scratch/
 *.xapk
 *.db
 *.log
-*.zip
 *.jar
+!gradle-wrapper.jar
+!android/gradle/wrapper/gradle-wrapper.jar
