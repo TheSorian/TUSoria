@@ -4,11 +4,31 @@
 [![React](https://img.shields.io/badge/React-18+-61DAFB?style=flat&logo=react&logoColor=black)](https://react.dev/)
 [![Vitest](https://img.shields.io/badge/Tests-102%20passing-brightgreen?style=flat&logo=vitest&logoColor=white)](https://vitest.dev/)
 [![PWA](https://img.shields.io/badge/PWA-Installable-blueviolet?style=flat&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
+[![Android APK](https://img.shields.io/badge/Android-APK%20Disponible-3DDC84?style=flat&logo=android&logoColor=white)](https://github.com/TheSorian/TUSoria/releases/tag/latest-apk)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**TUSoria** es una aplicación web progresiva (PWA) de alto rendimiento, diseñada para consultar en tiempo real el transporte urbano de la ciudad de Soria (Avanza Soria) y la conexión metropolitana con Golmayo / Las Camaretas.
+**TUSoria** es una aplicación web progresiva (PWA) y app nativa Android de alto rendimiento, diseñada para consultar en tiempo real el transporte urbano de la ciudad de Soria (Avanza Soria) y la conexión metropolitana con Golmayo / Las Camaretas.
 
 Permite ver la ubicación estimada de los autobuses, tiempos de llegada en cada parada, consultar horarios oficiales completos y planificar rutas punto a punto con cálculo de salidas y llegadas programadas.
+
+---
+
+## 📱 Descarga de la App Nativa (APK Android)
+
+Además de usar TUSoria desde el navegador como **PWA instalable**, dispones de la aplicación nativa para **Android** compilada mediante Capacitor.
+
+### 📥 Descarga Directa
+Puedes descargar la versión más reciente lista para instalar desde GitHub:
+
+👉 **[Descargar TUSoria APK (Última versión)](https://github.com/TheSorian/TUSoria/releases/tag/latest-apk)**
+
+### 📲 Cómo instalar en tu móvil:
+1. Pulsa en el enlace superior y descarga el archivo `.apk` en tu dispositivo Android.
+2. Abre la descarga. Si tu móvil lo solicita, permite *"Instalar aplicaciones de fuentes desconocidas"* para tu navegador o gestor de descargas.
+3. Pulsa **Instalar**.
+4. ¡Listo! Disfruta de la app con apertura instantánea, pantalla completa y soporte de geolocalización GPS nativa.
+
+> **Compilación Automática:** El repositorio incluye un flujo de trabajo continuo en **GitHub Actions** (`.github/workflows/build-apk.yml`) que genera y actualiza automáticamente el APK con cada actualización en la rama principal `main`.
 
 ---
 
@@ -31,7 +51,7 @@ Permite ver la ubicación estimada de los autobuses, tiempos de llegada en cada 
 - **Transbordos optimizados:** Detección de enlaces en paradas hub (Mariano Granados, Hospital, Estación de Autobuses, etc.) con margen de seguridad mínimo de 2 minutos.
 
 ### 📅 4. Horarios Oficiales Completos
-- Base de datos exhaustiva de horarios vigentes de Avanza Soria (marzo 2025).
+- Base de datos exhaustiva de horarios oficiales vigentes de Avanza Soria (marzo 2025).
 - Tabla interactiva desglosada por paradas y expediciones estándar y con prolongaciones (`*Calaverón` y `*Polígono`).
 
 ### 📱 5. PWA (Progressive Web App) Offline-Ready
@@ -41,18 +61,20 @@ Permite ver la ubicación estimada de los autobuses, tiempos de llegada en cada 
 
 ---
 
-## 🚏 Líneas de Autobús Cubiertas
+## 🚏 Red de Líneas y Recorridos
 
-| Línea | Nombre / Recorrido | Frecuencia Laborables | Frecuencia Sábados | Domingos / Festivos |
-|:---:|:---|:---:|:---:|:---:|
-| **L1** | Centro – Hospitales (vía Pajaritos) | Cada 20 min (07:30 - 22:30) | Cada 30 min (08:30 - 22:00) | *Ver Línea Circular (C)* |
-| **L2** | Centro – Polígono – Estación Autobuses | Cada 20 min (07:40 - 22:40) | Cada 30 min (08:40 - 21:40) | *Ver Línea Circular (C)* |
-| **L3** | Centro – Hospitales (vía Royales) | Cada 20 min (07:35 - 22:15) | Cada 30 min (08:45 - 21:45) | *Sin servicio* |
-| **L4** | Centro – Hospitales – Estación | Cada 30 min (07:45 - 21:45) | Cada 30 min (09:15 - 21:15) | *Sin servicio* |
-| **L4E** | El Salvador – Barrio de Las Casas | Turnos (07:50, 13:50, 19:50) | Turnos puntuales | *Sin servicio* |
-| **C** | **Línea Circular** (Festivos) | *Sin servicio (L1-L4 activas)* | *Sin servicio* | Cada 30 min (09:00 - 21:30) |
-| **EX** | Exprés Polígono Industrial Valcorba | Turnos laborales (06:45, 07:45, 14:45) | *Sin servicio* | *Sin servicio* |
-| **LC** | Soria (Duques de Soria) – CC Camaretas (Golmayo) | Cada 30 min (08:00 - 22:00) | Cada 30-45 min (08:00 - 22:30) | Turno tarde (16:00 - 22:00) |
+| Línea | Denominación Oficial | Recorrido / Terminales | Tipo de Servicio |
+|:---:|:---|:---|:---:|
+| **L1** | Centro – Hospitales (vía Pajaritos) | Plaza Mariano Granados ➔ Campus Los Pajaritos ➔ Hospital Santa Bárbara (*Calaverón) | Diario (L-S) |
+| **L2** | Centro – Polígono – Estación Autobuses | El Salvador ➔ Estación Autobuses ➔ Santa Bárbara (*Polígono Las Casas) | Diario (L-S) |
+| **L3** | Centro – Hospitales (vía Royales) | Plaza Mariano Granados ➔ Los Royales ➔ Hospital Santa Bárbara (*Calaverón) | Diario (L-S) |
+| **L4** | Centro – Hospitales – Estación | Plaza Mariano Granados ➔ Hospital Santa Bárbara ➔ Estación de Autobuses | Diario (L-S) |
+| **L4E** | El Salvador – Barrio de Las Casas | El Salvador ➔ Polígono Industrial ➔ Barrio de Las Casas | Expediciones de turno (L-V) |
+| **C** | **Línea Circular** (Festivos) | El Salvador ➔ Barriada ➔ Royales ➔ Granados ➔ Calaverón ➔ Hospital ➔ Estación | Domingos y Festivos |
+| **EX** | Exprés Polígono Industrial Valcorba | Plaza Mariano Granados ➔ Polígono Valcorba / Las Casas | Turnos laborales (06:45, 07:45, 14:45) |
+| **LC** | Soria – CC Camaretas (Golmayo) | Av. Duques de Soria / Estación ➔ Centro Cívico Las Camaretas | Diario (Lunes a Domingo) |
+
+> ℹ️ *Los horarios exactos de paso para cada parada pueden consultarse interactivamente desde la sección **Líneas y Horarios** de la aplicación.*
 
 ---
 
@@ -60,6 +82,10 @@ Permite ver la ubicación estimada de los autobuses, tiempos de llegada en cada 
 
 ```text
 SoriaBus/
+├── .github/
+│   └── workflows/
+│       └── build-apk.yml       # Compilación y publicación automática del APK Android
+├── android/                    # Proyecto nativo Android (Capacitor)
 ├── api/
 │   └── eta.js                  # Proxy Serverless para la API de Avanza (TLS y fallback)
 ├── public/
@@ -79,7 +105,7 @@ SoriaBus/
 │   ├── context/
 │   │   └── LiveDataContext.jsx # Estado global y suscripciones en tiempo real
 │   ├── data/
-│   │   ├── soriaLines.js       # Metadatos, colores y frecuencias de líneas
+│   │   ├── soriaLines.js       # Metadatos y colores de líneas
 │   │   ├── soriaLinesData.js   # Paradas oficiales con coordenadas GPS
 │   │   ├── avanzaSchedules.js  # Matriz horaria oficial Avanza
 │   │   ├── camaretasSchedule.js# Horarios línea Camaretas
@@ -95,6 +121,7 @@ SoriaBus/
 │   ├── index.css               # Estilos globales y temas
 │   └── main.jsx                # Punto de entrada Vite
 ├── tests/                      # Suite de tests unitarios y de integración (Vitest)
+├── capacitor.config.json       # Configuración Capacitor nativo
 ├── vite.config.js              # Configuración de Vite y PWA Manifest
 └── package.json
 ```
@@ -145,10 +172,12 @@ npm run build
 
 ## 📦 Despliegue
 
-La aplicación está lista para ser desplegada en **Vercel**, **Netlify** o cualquier plataforma compatible con SPA y Serverless Functions:
-
-- En **Vercel**, la función serverless en `api/eta.js` se configura automáticamente para gestionar las peticiones a la API del SAE.
-- Si se empaqueta con **Capacitor** (iOS/Android), la variable `VITE_API_BASE_URL` puede apuntar al endpoint de producción.
+- **Web / PWA:** Listo para ser desplegado en **Vercel** o **Netlify**. La función serverless en `api/eta.js` se configura automáticamente para gestionar las peticiones a la API del SAE.
+- **Android Nativo:** El proyecto Capacitor sincroniza la carpeta `dist` con el proyecto Android:
+  ```bash
+  npm run build
+  npx cap sync android
+  ```
 
 ---
 

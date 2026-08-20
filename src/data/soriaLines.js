@@ -7,12 +7,7 @@ export const SORIA_LINES = [
     color: "#103056",
     badgeClass: "badge-l1",
     isRealTimeAvailable: true,
-    terminals: ["Mariano Granados", "Hospital Santa Bárbara"],
-    frequencies: {
-      workday: "Cada 20 min (07:30 a 22:30)",
-      saturday: "Cada 30 min (08:30 a 22:00)",
-      holiday: "Sin servicio (Ver Línea Circular)"
-    }
+    terminals: ["Mariano Granados", "Hospital Santa Bárbara"]
   },
   {
     id: "002",
@@ -22,12 +17,7 @@ export const SORIA_LINES = [
     color: "#E31A38",
     badgeClass: "badge-l2",
     isRealTimeAvailable: true,
-    terminals: ["El Salvador", "Polígono Industrial"],
-    frequencies: {
-      workday: "Cada 20 min (07:40 a 22:40)",
-      saturday: "Cada 30 min (08:40 a 21:40)",
-      holiday: "Sin servicio (Ver Línea Circular)"
-    }
+    terminals: ["El Salvador", "Polígono Industrial"]
   },
   {
     id: "003",
@@ -37,12 +27,7 @@ export const SORIA_LINES = [
     color: "#00A3E0",
     badgeClass: "badge-l3",
     isRealTimeAvailable: true,
-    terminals: ["Mariano Granados", "Hospital Santa Bárbara"],
-    frequencies: {
-      workday: "Cada 20 min (07:35 a 22:15)",
-      saturday: "Cada 30 min (08:45 a 21:45)",
-      holiday: "Sin servicio"
-    }
+    terminals: ["Mariano Granados", "Hospital Santa Bárbara"]
   },
   {
     id: "004",
@@ -52,12 +37,7 @@ export const SORIA_LINES = [
     color: "#059669",
     badgeClass: "badge-l4",
     isRealTimeAvailable: true,
-    terminals: ["Mariano Granados", "Estación Autobuses"],
-    frequencies: {
-      workday: "Cada 30 min (07:45 a 21:45)",
-      saturday: "Cada 30 min (09:15 a 21:15)",
-      holiday: "Sin servicio"
-    }
+    terminals: ["Mariano Granados", "Estación Autobuses"]
   },
   {
     id: "012",
@@ -67,12 +47,7 @@ export const SORIA_LINES = [
     color: "#059669",
     badgeClass: "badge-l4e",
     isRealTimeAvailable: true,
-    terminals: ["El Salvador", "Barrio de Las Casas"],
-    frequencies: {
-      workday: "Expediciones puntuales (07:50, 13:50, 19:50)",
-      saturday: "Expediciones puntuales",
-      holiday: "Sin servicio"
-    }
+    terminals: ["El Salvador", "Barrio de Las Casas"]
   },
   {
     id: "008",
@@ -82,12 +57,7 @@ export const SORIA_LINES = [
     color: "#7B3F8D",
     badgeClass: "badge-c",
     isRealTimeAvailable: true,
-    terminals: ["El Salvador", "Hospital Santa Bárbara"],
-    frequencies: {
-      workday: "Sin servicio (Líneas 1-4 activas)",
-      saturday: "Sin servicio",
-      holiday: "Cada 30 min (09:00 a 21:30)"
-    }
+    terminals: ["El Salvador", "Hospital Santa Bárbara"]
   },
   {
     id: "009",
@@ -97,12 +67,7 @@ export const SORIA_LINES = [
     color: "#F39200",
     badgeClass: "badge-ex",
     isRealTimeAvailable: true,
-    terminals: ["Mariano Granados", "Polígono Valcorba / Casas"],
-    frequencies: {
-      workday: "Turnos de entrada laboral (06:45, 07:45, 14:45)",
-      saturday: "Sin servicio",
-      holiday: "Sin servicio"
-    }
+    terminals: ["Mariano Granados", "Polígono Valcorba / Casas"]
   },
   {
     id: "LC_CAMARETAS",
@@ -112,12 +77,7 @@ export const SORIA_LINES = [
     color: "#d4af37",
     badgeClass: "badge-lc",
     isRealTimeAvailable: false,
-    terminals: ["Av. Duques de Soria", "Centro Cívico Las Camaretas"],
-    frequencies: {
-      workday: "Cada 30 min (08:00 a 22:00)",
-      saturday: "Cada 30-45 min (09:00 a 22:30)",
-      holiday: "Servicio especial tarde (16:00 a 22:00)"
-    }
+    terminals: ["Av. Duques de Soria", "Centro Cívico Las Camaretas"]
   }
 ];
 

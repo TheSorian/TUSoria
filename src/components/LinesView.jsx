@@ -58,12 +58,12 @@ export default function LinesView({ onSelectStop }) {
           <div>
             <span className="label" style={{ display: 'block', marginBottom: 2 }}>Sentido de Circulación</span>
             <span className="text-xs fw-700" style={{ color: 'var(--accent-text)' }}>
-              🔄 Recorrido Unidireccional: {selectedLine.terminals.join(' ➔ ')}
+              🔄 Recorrido: {selectedLine.terminals.join(' ➔ ')}
             </span>
           </div>
           <div>
-            <span className="label" style={{ display: 'block', marginBottom: 2 }}>Frecuencia General</span>
-            <span className="text-xs text-accent fw-700">{selectedLine.frequencies.workday}</span>
+            <span className="label" style={{ display: 'block', marginBottom: 2 }}>Horarios Oficiales</span>
+            <span className="text-xs text-secondary fw-600">Matriz oficial completa abajo 👇</span>
           </div>
         </div>
       </div>
