@@ -37,9 +37,6 @@ const svgIcon = `
   <circle cx="256" cy="256" r="140" fill="url(#badgeGrad)" filter="url(#badgeShadow)"/>
   <circle cx="256" cy="256" r="139" fill="none" stroke="#60a5fa" stroke-width="2.5" stroke-opacity="0.7"/>
 
-  <!-- Live Pulse Dot (Top Right of Badge) -->
-  <circle cx="348" cy="164" r="11" fill="#22c55e" stroke="#0c1425" stroke-width="3.5"/>
-
   <!-- Modern Bus Graphic inside Badge (Centered around 256, 256) -->
   <g transform="translate(256, 256)">
     <!-- Bus Main Outer Body -->
